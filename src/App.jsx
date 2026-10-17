@@ -534,6 +534,7 @@ export default function App() {
                   <button onClick={() => setShowScreenerConfig(true)} className={`p-2 rounded-lg border ${btnBg} shrink-0`}><SlidersHorizontal className="w-4 h-4" /></button>
                   <button onClick={() => runLiveScan('52wHigh')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wHigh' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}><TrendingUp className="w-3.5 h-3.5 mr-1" /> Near High (&ge;{(100-screenerParams.highPct)}%)</button>
                   <button onClick={() => runLiveScan('52wLow')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wLow' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}><Play className="w-3.5 h-3.5 mr-1" /> Above Low (&ge;{screenerParams.lowPct}%)</button>
+                  <button onClick={() => runLiveScan('combined')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'combined' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}>Combined Filter</button>
                   <button onClick={() => runLiveScan('insideBar')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'insideBar' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}><BarChart2 className="w-3.5 h-3.5 mr-1" /> Weekly Inside Bar ({screenerParams.insideBarCount || 1}W)</button>
                 </div>
               )}
