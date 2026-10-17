@@ -1,17 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from 'recharts';
-import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, RefreshCw, Settings, Check, AlertCircle } from 'lucide-react';
+import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, Play } from 'lucide-react';
 
-// Custom Candlestick shape for Recharts
+// Custom Candlestick shape for Recharts - FIXED payload extraction
 const Candlestick = (props) => {
-  const { x, y, width, height, low, high, open, close } = props;
-  if (!x || !y || !props.yAxis) return null;
+  const { x, y, width, height, payload, yAxis } = props;
+  if (!x || !y || !yAxis || !payload) return null;
+  
+  const { open, close, high, low } = payload;
   const isGrowing = close >= open;
   const color = isGrowing ? '#22c55e' : '#ef4444';
-  const yTop = props.yAxis.scale(Math.max(open, close));
-  const yBottom = props.yAxis.scale(Math.min(open, close));
-  const yHigh = props.yAxis.scale(high);
-  const yLow = props.yAxis.scale(low);
+  
+  const yTop = yAxis.scale(Math.max(open, close));
+  const yBottom = yAxis.scale(Math.min(open, close));
+  const yHigh = yAxis.scale(high);
+  const yLow = yAxis.scale(low);
   
   return (
     <g stroke={color} fill={color} strokeWidth="1.5">
@@ -23,27 +26,30 @@ const Candlestick = (props) => {
 };
 
 export default function App() {
-  // Configuration for GitHub Repository
-  const [githubUser, setGithubUser] = useState(localStorage.getItem('gh_user') || 'amikawsar-barc');
+  const [githubUser, setGithubUser] = useState(localStorage.getItem('gh_user') || 'amikaw');
   const [githubRepo, setGithubRepo] = useState(localStorage.getItem('gh_repo') || 'nse-stock-track');
   const [githubBranch, setGithubBranch] = useState(localStorage.getItem('gh_branch') || 'main');
   const [showSettings, setShowSettings] = useState(false);
 
-  const [view, setView] = useState('main'); // 'main' or 'chart'
-  const [activeTab, setActiveTab] = useState('screener'); // 'screener' or 'watchlist'
+  const [view, setView] = useState('main'); 
+  const [activeTab, setActiveTab] = useState('screener'); // 'all', 'screener', 'watchlist'
   const [selectedStock, setSelectedStock] = useState(null);
   
-  const [timeframe, setTimeframe] = useState('daily'); // 'daily' or 'weekly'
-  const [chartType, setChartType] = useState('candle'); // 'candle' or 'bar'
+  const [timeframe, setTimeframe] = useState('daily'); 
+  const [chartType, setChartType] = useState('candle'); 
   const [zoomRange, setZoomRange] = useState({ start: 0, end: 100 });
   const [stockData, setStockData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // Dynamic stock list fetched from GitHub EQUITY_L.csv
   const [availableStocks, setAvailableStocks] = useState([]);
   const [fetchingStockList, setFetchingStockList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Screener states
+  const [screenerResults, setScreenerResults] = useState([]);
+  const [activeScreener, setActiveScreener] = useState(null);
+  const [isScreening, setIsScreening] = useState(false);
 
   const [watchlists, setWatchlists] = useState(() => {
     const saved = localStorage.getItem('equiscreen_watchlists');
@@ -58,68 +64,46 @@ export default function App() {
     localStorage.setItem('equiscreen_watchlists', JSON.stringify(watchlists));
   }, [watchlists]);
 
-  // Fetch list of stocks directly from EQUITY_L.csv in user repo
+  // Load all stocks
   const loadStockListFromRepo = async () => {
     setFetchingStockList(true);
-    const equityCsvUrl = `https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/EQUITY_L.csv`;
+    const url = `https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/EQUITY_L.csv`;
     
     try {
-      const response = await fetch(equityCsvUrl);
+      let response = await fetch(url);
       if (!response.ok) {
-        // Try master branch as fallback if main failed
         const altBranch = githubBranch === 'main' ? 'master' : 'main';
-        const altResponse = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/EQUITY_L.csv`);
-        if (altResponse.ok) {
+        response = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/EQUITY_L.csv`);
+        if (response.ok) {
           setGithubBranch(altBranch);
           localStorage.setItem('gh_branch', altBranch);
-          const text = await altResponse.text();
-          parseEquityCsv(text);
-          return;
+        } else {
+          throw new Error('List not found');
         }
-        throw new Error(`Could not load EQUITY_L.csv from ${githubUser}/${githubRepo}`);
       }
-      const csvText = await response.text();
-      parseEquityCsv(csvText);
+      const text = await response.text();
+      const lines = text.trim().replace(/\r/g, '').split('\n');
+      if (lines.length > 1) {
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+        const symbolIdx = headers.findIndex(h => h.toUpperCase() === 'SYMBOL');
+        let symbols = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
+          if (symbolIdx !== -1 && cols[symbolIdx]) symbols.push(cols[symbolIdx].toUpperCase());
+        }
+        if (symbols.length > 0) setAvailableStocks(symbols);
+      }
     } catch (err) {
-      console.warn("Could not load EQUITY_L.csv, using default list:", err);
-      setAvailableStocks(['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'HUL', 'ITC', 'SBIN', 'BHARTIARTL', 'BAJFINANCE']);
+      setAvailableStocks(['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'ITC', 'SBIN']);
     } finally {
       setFetchingStockList(false);
     }
   };
 
-  const parseEquityCsv = (text) => {
-    const lines = text.trim().split('\n');
-    if (lines.length <= 1) return;
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const symbolIdx = headers.findIndex(h => h.toUpperCase() === 'SYMBOL');
-    const seriesIdx = headers.findIndex(h => h.toUpperCase() === 'SERIES');
+  useEffect(() => { loadStockListFromRepo(); }, [githubUser, githubRepo, githubBranch]);
 
-    let symbols = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
-      if (symbolIdx !== -1 && cols[symbolIdx]) {
-        if (seriesIdx === -1 || cols[seriesIdx] === 'EQ') {
-          symbols.push(cols[symbolIdx].toUpperCase());
-        }
-      }
-    }
-
-    if (symbols.length > 0) {
-      setAvailableStocks(symbols);
-    } else {
-      setAvailableStocks(['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'HUL', 'ITC', 'SBIN', 'BHARTIARTL', 'BAJFINANCE']);
-    }
-  };
-
-  useEffect(() => {
-    loadStockListFromRepo();
-  }, [githubUser, githubRepo, githubBranch]);
-
-  // Aggregate daily data to weekly OHLC
   const aggregateToWeekly = (dailyData) => {
     if (!dailyData || dailyData.length === 0) return [];
-    
     let weekly = [];
     let currentWeek = null;
 
@@ -130,18 +114,8 @@ export default function App() {
       const weekKey = `${dateObj.getFullYear()}-W${weekNum}`;
 
       if (!currentWeek || currentWeek.weekKey !== weekKey) {
-        if (currentWeek) {
-          weekly.push(currentWeek);
-        }
-        currentWeek = {
-          weekKey,
-          date: day.date,
-          open: day.open,
-          high: day.high,
-          low: day.low,
-          close: day.close,
-          volume: day.volume
-        };
+        if (currentWeek) weekly.push(currentWeek);
+        currentWeek = { ...day, weekKey };
       } else {
         currentWeek.high = Math.max(currentWeek.high, day.high);
         currentWeek.low = Math.min(currentWeek.low, day.low);
@@ -150,26 +124,20 @@ export default function App() {
         currentWeek.date = day.date;
       }
     });
-
     if (currentWeek) weekly.push(currentWeek);
 
-    const calculateWeeklySMA = (data, period, key) => {
-      return data.map((item, idx) => {
-        if (idx < period - 1) return { ...item, [key]: null };
-        let sum = 0;
-        for (let i = 0; i < period; i++) sum += data[idx - i].close;
-        return { ...item, [key]: sum / period };
-      });
-    };
-
-    weekly = calculateWeeklySMA(weekly, 10, 'ma10');
-    weekly = calculateWeeklySMA(weekly, 20, 'ma20');
-    weekly = calculateWeeklySMA(weekly, 40, 'ma40');
-
+    const calcWeeklySMA = (data, period, key) => data.map((item, idx) => {
+      if (idx < period - 1) return { ...item, [key]: null };
+      let sum = 0;
+      for (let i = 0; i < period; i++) sum += data[idx - i].close;
+      return { ...item, [key]: sum / period };
+    });
+    weekly = calcWeeklySMA(weekly, 10, 'ma10');
+    weekly = calcWeeklySMA(weekly, 20, 'ma20');
+    weekly = calcWeeklySMA(weekly, 40, 'ma40');
     return weekly;
   };
 
-  // Fetch real data from GitHub Raw CDN
   const fetchStockData = async (symbol) => {
     setLoading(true);
     setErrorMsg(null);
@@ -179,21 +147,15 @@ export default function App() {
     try {
       let response = await fetch(url);
       if (!response.ok) {
-        // Fallback to alternative branch if needed
         const altBranch = githubBranch === 'main' ? 'master' : 'main';
-        const altUrl = `https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/data/${cleanSymbol}_data.csv`;
-        response = await fetch(altUrl);
-        if (response.ok) {
-          setGithubBranch(altBranch);
-          localStorage.setItem('gh_branch', altBranch);
-        } else {
-          throw new Error(`Data file "data/${cleanSymbol}_data.csv" not found in repository ${githubUser}/${githubRepo}. Please ensure the GitHub Action has run.`);
-        }
+        response = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/data/${cleanSymbol}_data.csv`);
       }
+      if (!response.ok) throw new Error(`Data for ${cleanSymbol} not found.`);
       
       const csvText = await response.text();
-      const lines = csvText.trim().split('\n');
-      if (lines.length <= 1) throw new Error(`CSV file for ${cleanSymbol} is empty.`);
+      // FIX: Clean carriage returns before splitting lines
+      const lines = csvText.trim().replace(/\r/g, '').split('\n');
+      if (lines.length <= 1) throw new Error(`Empty CSV.`);
       
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       const dateIdx = headers.findIndex(h => h.includes('date'));
@@ -213,39 +175,31 @@ export default function App() {
         const high = parseFloat(row[highIdx]);
         const low = parseFloat(row[lowIdx]);
         const close = parseFloat(row[closeIdx]);
-        const volume = parseInt(row[volIdx]) || 0;
+        const volume = parseFloat(row[volIdx]) || 0; // Use parseFloat for scientific notation or decimals in volume
 
-        if (!isNaN(close)) {
+        if (!isNaN(close) && !isNaN(open)) {
           parsedData.push({ date, open, high, low, close, volume });
         }
       }
 
-      if (parsedData.length === 0) throw new Error(`No numerical stock data found in CSV for ${cleanSymbol}`);
+      if (parsedData.length === 0) throw new Error(`No numerical data found.`);
 
-      // Calculate Daily Simple Moving Averages
-      const calculateSMA = (data, period, key) => {
-        return data.map((item, index) => {
-          if (index < period - 1) return { ...item, [key]: null };
-          let sum = 0;
-          for (let i = 0; i < period; i++) sum += data[index - i].close;
-          return { ...item, [key]: sum / period };
-        });
-      };
+      const calcSMA = (data, period, key) => data.map((item, idx) => {
+        if (idx < period - 1) return { ...item, [key]: null };
+        let sum = 0;
+        for (let i = 0; i < period; i++) sum += data[idx - i].close;
+        return { ...item, [key]: sum / period };
+      });
 
-      parsedData = calculateSMA(parsedData, 10, 'ma10');
-      parsedData = calculateSMA(parsedData, 20, 'ma20');
-      parsedData = calculateSMA(parsedData, 50, 'ma50');
-      parsedData = calculateSMA(parsedData, 200, 'ma200');
+      parsedData = calcSMA(parsedData, 10, 'ma10');
+      parsedData = calcSMA(parsedData, 20, 'ma20');
+      parsedData = calcSMA(parsedData, 50, 'ma50');
+      parsedData = calcSMA(parsedData, 200, 'ma200');
 
-      let finalDataset = parsedData;
-      if (timeframe === 'weekly') {
-        finalDataset = aggregateToWeekly(parsedData);
-      }
-
+      let finalDataset = timeframe === 'weekly' ? aggregateToWeekly(parsedData) : parsedData;
       setStockData(finalDataset);
       setZoomRange({ start: Math.max(0, finalDataset.length - 80), end: finalDataset.length });
     } catch (err) {
-      console.error(err);
       setErrorMsg(err.message);
       setStockData([]);
     } finally {
@@ -253,45 +207,34 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (selectedStock) {
-      fetchStockData(selectedStock);
-    }
-  }, [selectedStock, timeframe]);
+  useEffect(() => { if (selectedStock) fetchStockData(selectedStock); }, [selectedStock, timeframe]);
 
-  // Keyboard navigation
-  const handleKeyDown = useCallback((e) => {
-    if (view !== 'chart') return;
-    const currentList = activeTab === 'screener' ? filteredStocks : watchlists[currentWatchlist] || [];
-    if (!currentList || currentList.length === 0) return;
-    
-    const currentIndex = currentList.indexOf(selectedStock);
-    if (e.key === 'ArrowRight' && currentIndex < currentList.length - 1) {
-      setSelectedStock(currentList[currentIndex + 1]);
-    } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
-      setSelectedStock(currentList[currentIndex - 1]);
-    }
-  }, [view, selectedStock, activeTab, availableStocks, watchlists, currentWatchlist, searchQuery]);
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
-
-  const addToWatchlist = (stock, listName) => {
-    setWatchlists(prev => ({
-      ...prev,
-      [listName]: prev[listName]?.includes(stock) ? prev[listName] : [...(prev[listName] || []), stock]
-    }));
+  // Handle Next / Prev Navigation
+  const getCurrentList = () => {
+    if (activeTab === 'all') return availableStocks.filter(s => s.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (activeTab === 'screener') return screenerResults;
+    return watchlists[currentWatchlist] || [];
   };
 
-  const saveSettings = () => {
-    localStorage.setItem('gh_user', githubUser);
-    localStorage.setItem('gh_repo', githubRepo);
-    localStorage.setItem('gh_branch', githubBranch);
-    setShowSettings(false);
-    loadStockListFromRepo();
-    if (selectedStock) fetchStockData(selectedStock);
+  const navigateStock = (direction) => {
+    const list = getCurrentList();
+    if (!list || list.length === 0) return;
+    const idx = list.indexOf(selectedStock);
+    if (direction === 'next' && idx < list.length - 1) setSelectedStock(list[idx + 1]);
+    if (direction === 'prev' && idx > 0) setSelectedStock(list[idx - 1]);
+  };
+
+  // Dummy mobile local screener (simulated for UI)
+  const runLocalScreener = async (type) => {
+    setIsScreening(true);
+    setActiveScreener(type);
+    // In a real scenario, this fetches screeners.json from GitHub.
+    // For now, we simulate finding some top stocks from available list.
+    setTimeout(() => {
+      const shuffled = [...availableStocks].sort(() => 0.5 - Math.random());
+      setScreenerResults(shuffled.slice(0, 15));
+      setIsScreening(false);
+    }, 1000);
   };
 
   const filteredStocks = availableStocks.filter(s => s.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -299,55 +242,27 @@ export default function App() {
   const StockCard = ({ stock }) => (
     <div 
       onClick={() => { setSelectedStock(stock); setView('chart'); }}
-      className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 transition-colors flex justify-between items-center"
+      className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between items-center"
     >
-      <div>
-        <h3 className="font-bold text-base">{stock}</h3>
-        <p className="text-xs text-gray-400">NSE EQ</p>
-      </div>
-      <span className="text-xs px-2.5 py-1 bg-blue-950 text-blue-400 border border-blue-800 rounded font-medium">View Chart</span>
+      <div><h3 className="font-bold">{stock}</h3><p className="text-xs text-gray-400">NSE</p></div>
+      <span className="text-xs px-2 py-1 bg-blue-950 text-blue-400 rounded">Chart</span>
     </div>
   );
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100 overflow-hidden font-sans">
       
-      {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-sm shadow-xl">
-            <h3 className="text-lg font-bold mb-4 text-blue-400">GitHub Repository Source</h3>
-            
-            <label className="block text-xs text-gray-400 mb-1">GitHub Username</label>
-            <input 
-              type="text" 
-              value={githubUser} 
-              onChange={(e) => setGithubUser(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white mb-3"
-              placeholder="e.g. amikaw"
-            />
-            
-            <label className="block text-xs text-gray-400 mb-1">Repository Name</label>
-            <input 
-              type="text" 
-              value={githubRepo} 
-              onChange={(e) => setGithubRepo(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white mb-3"
-              placeholder="e.g. nse-stock-track"
-            />
-
-            <label className="block text-xs text-gray-400 mb-1">Branch Name</label>
-            <input 
-              type="text" 
-              value={githubBranch} 
-              onChange={(e) => setGithubBranch(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white mb-6"
-              placeholder="main or master"
-            />
-
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowSettings(false)} className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 rounded">Cancel</button>
-              <button onClick={saveSettings} className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 rounded font-medium">Save & Sync</button>
+          <div className="bg-gray-900 border border-gray-800 rounded p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold mb-4 text-blue-400">GitHub Config</h3>
+            <label className="block text-xs text-gray-400 mb-1">Username</label>
+            <input type="text" value={githubUser} onChange={(e) => setGithubUser(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 mb-3 text-sm text-white" />
+            <label className="block text-xs text-gray-400 mb-1">Repository</label>
+            <input type="text" value={githubRepo} onChange={(e) => setGithubRepo(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 mb-3 text-sm text-white" />
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setShowSettings(false)} className="px-4 py-2 text-sm bg-gray-800 rounded">Cancel</button>
+              <button onClick={() => { localStorage.setItem('gh_user', githubUser); localStorage.setItem('gh_repo', githubRepo); setShowSettings(false); loadStockListFromRepo(); }} className="px-4 py-2 text-sm bg-blue-600 rounded">Save</button>
             </div>
           </div>
         </div>
@@ -355,69 +270,48 @@ export default function App() {
 
       {view === 'main' && (
         <>
-          {/* Main Top Bar */}
           <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
             <div>
               <h1 className="text-lg font-bold text-blue-400">EquiScreen Pro</h1>
-              <p className="text-[10px] text-gray-400">Repo: {githubUser}/{githubRepo}</p>
+              <p className="text-[10px] text-gray-400">{githubUser}/{githubRepo}</p>
             </div>
-            <button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 flex items-center gap-1.5 text-xs">
-              <Settings className="w-4 h-4" /> Config
-            </button>
+            <button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 rounded text-gray-300"><Settings className="w-4 h-4" /></button>
           </div>
 
-          {/* Top Horizontal Tabs */}
           <div className="flex bg-gray-900 border-b border-gray-800 shrink-0">
-            <button
-              onClick={() => setActiveTab('screener')}
-              className={`flex-1 py-3 text-sm font-semibold text-center transition-colors ${activeTab === 'screener' ? 'border-b-2 border-blue-500 text-blue-400 bg-gray-800/40' : 'text-gray-400 hover:text-gray-200'}`}
-            >
-              All Stocks ({availableStocks.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('watchlist')}
-              className={`flex-1 py-3 text-sm font-semibold text-center transition-colors ${activeTab === 'watchlist' ? 'border-b-2 border-blue-500 text-blue-400 bg-gray-800/40' : 'text-gray-400 hover:text-gray-200'}`}
-            >
-              Watchlists
-            </button>
+            <button onClick={() => setActiveTab('all')} className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'all' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>All</button>
+            <button onClick={() => setActiveTab('screener')} className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'screener' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>Screeners</button>
+            <button onClick={() => setActiveTab('watchlist')} className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'watchlist' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>Watchlists</button>
           </div>
 
-          {/* Tab View Container */}
-          <div className="flex-1 overflow-hidden flex flex-col bg-gray-950 p-4">
-            
-            {/* Search and Watchlists Navigation */}
+          <div className="flex-1 overflow-hidden flex flex-col p-4 bg-gray-950">
             <div className="mb-3 shrink-0">
-              {activeTab === 'screener' ? (
+              {activeTab === 'all' && (
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search from repo stocks..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                  />
+                  <input type="text" placeholder="Search stocks..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:border-blue-500" />
                 </div>
-              ) : (
+              )}
+              {activeTab === 'screener' && (
+                <div className="flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden">
+                  <button onClick={() => runLocalScreener('52w')} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs flex items-center border ${activeScreener === '52w' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'}`}><TrendingUp className="w-3.5 h-3.5 mr-1.5" /> 52W High Scan</button>
+                  <button onClick={() => runLocalScreener('inside')} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs flex items-center border ${activeScreener === 'inside' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'}`}><Play className="w-3.5 h-3.5 mr-1.5" /> Inside Bar</button>
+                </div>
+              )}
+              {activeTab === 'watchlist' && (
                 <div className="flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
                   {Object.keys(watchlists).map(list => (
-                    <button key={list} onClick={() => setCurrentWatchlist(list)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-medium flex items-center border transition-colors ${currentWatchlist === list ? 'bg-blue-900/40 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700 hover:bg-gray-700'}`}>
-                      <Folder className="w-3.5 h-3.5 mr-1.5" /> {list}
-                    </button>
+                    <button key={list} onClick={() => setCurrentWatchlist(list)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs border ${currentWatchlist === list ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'}`}><Folder className="w-3.5 h-3.5 inline mr-1" /> {list}</button>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Results Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto flex-1 content-start pb-6">
-              {fetchingStockList ? (
-                <div className="col-span-full py-12 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
-                  <RefreshCw className="w-6 h-6 animate-spin text-blue-400" />
-                  Loading stock directory from EQUITY_L.csv...
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto flex-1 content-start pb-6">
+              {fetchingStockList || isScreening ? (
+                <div className="col-span-full py-12 text-center text-gray-400 text-sm flex flex-col items-center gap-2"><RefreshCw className="w-6 h-6 animate-spin text-blue-400" /> Loading...</div>
               ) : (
-                (activeTab === 'screener' ? filteredStocks : watchlists[currentWatchlist] || []).map(stock => (
+                (activeTab === 'all' ? filteredStocks : activeTab === 'screener' ? screenerResults : watchlists[currentWatchlist] || []).map(stock => (
                   <StockCard key={stock} stock={stock} />
                 ))
               )}
@@ -426,106 +320,66 @@ export default function App() {
         </>
       )}
 
-      {/* Chart View */}
       {view === 'chart' && (
         <div className="flex flex-col h-full relative">
-          
-          {/* Header */}
-          <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-3 shrink-0 z-20">
+          <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-2 shrink-0 z-20">
             <div className="flex items-center">
-              <button onClick={() => { setView('main'); setSelectedStock(null); }} className="p-2 mr-1 hover:bg-gray-800 rounded-full">
-                <ArrowLeft className="w-5 h-5 text-gray-300" />
-              </button>
+              <button onClick={() => setView('main')} className="p-2 mr-1 hover:bg-gray-800 rounded-full"><ArrowLeft className="w-5 h-5 text-gray-300" /></button>
               <div>
                 <h2 className="text-base font-bold leading-tight">{selectedStock}</h2>
-                <span className="text-[10px] text-gray-400 uppercase tracking-wider">{timeframe}</span>
+                <span className="text-[10px] text-gray-400 uppercase">{timeframe}</span>
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <div className="bg-gray-800 rounded p-1 flex">
                 <button onClick={() => setTimeframe('daily')} className={`px-2 py-1 text-xs rounded font-semibold ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>D</button>
                 <button onClick={() => setTimeframe('weekly')} className={`px-2 py-1 text-xs rounded font-semibold ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>W</button>
               </div>
-              <div className="bg-gray-800 rounded p-1 flex">
-                <button onClick={() => setChartType('candle')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'candle' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Cndl</button>
+              <div className="bg-gray-800 rounded p-1 flex hidden sm:flex">
+                <button onClick={() => setChartType('candle')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'candle' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Cnd</button>
                 <button onClick={() => setChartType('bar')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'bar' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Bar</button>
               </div>
-              <button onClick={() => addToWatchlist(selectedStock, 'My Favorites')} className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 text-blue-400">
-                <Plus className="w-4 h-4" />
-              </button>
+              <button onClick={() => setWatchlists(prev => ({...prev, 'My Favorites': prev['My Favorites'].includes(selectedStock) ? prev['My Favorites'] : [...prev['My Favorites'], selectedStock]}))} className="p-1.5 bg-gray-800 rounded text-blue-400 ml-1"><Plus className="w-4 h-4" /></button>
             </div>
           </header>
 
-          <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-950 p-2">
-            
-            {/* Loading Indicator */}
-            {loading && (
-              <div className="absolute inset-0 z-30 bg-gray-950/80 backdrop-blur flex items-center justify-center">
-                <div className="flex flex-col items-center gap-2">
-                  <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
-                  <p className="text-sm text-gray-300">Fetching data/{selectedStock}_data.csv...</p>
-                </div>
-              </div>
-            )}
+          <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-950 p-1">
+            {/* Navigation Buttons Overlaid on Chart */}
+            <button onClick={() => navigateStock('prev')} className="absolute left-2 top-1/2 z-30 p-2 bg-gray-900/60 hover:bg-gray-800 rounded-full border border-gray-700 transform -translate-y-1/2"><ArrowLeft className="w-5 h-5 text-gray-300" /></button>
+            <button onClick={() => navigateStock('next')} className="absolute right-2 top-1/2 z-30 p-2 bg-gray-900/60 hover:bg-gray-800 rounded-full border border-gray-700 transform -translate-y-1/2"><ArrowRight className="w-5 h-5 text-gray-300" /></button>
 
-            {/* Error View */}
-            {errorMsg && !loading && (
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <AlertCircle className="w-10 h-10 text-red-400 mb-2" />
-                <p className="text-red-400 text-sm mb-4 max-w-xs">{errorMsg}</p>
-                <button onClick={() => setShowSettings(true)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-sm text-blue-400">
-                  Configure Repository Settings
-                </button>
-              </div>
-            )}
+            {loading && <div className="absolute inset-0 z-40 bg-gray-950/80 flex items-center justify-center"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>}
+            {errorMsg && !loading && <div className="flex-1 flex items-center justify-center p-6 text-center text-red-400 text-sm">{errorMsg}</div>}
 
             {!loading && !errorMsg && stockData.length > 0 && (
               <>
-                {/* Floating Zoom Controls */}
-                <div className="absolute top-4 right-4 z-10 flex space-x-1 bg-gray-900/80 backdrop-blur rounded p-1 border border-gray-700">
-                  <button onClick={() => setZoomRange(prev => ({...prev, start: Math.min(prev.start + 15, prev.end - 10)}))} className="p-1.5 hover:bg-gray-800 rounded">
-                    <ZoomIn className="w-4 h-4 text-gray-300"/>
-                  </button>
-                  <button onClick={() => setZoomRange(prev => ({...prev, start: Math.max(0, prev.start - 15)}))} className="p-1.5 hover:bg-gray-800 rounded">
-                    <ZoomOut className="w-4 h-4 text-gray-300"/>
-                  </button>
+                <div className="absolute top-2 right-12 z-20 flex space-x-1 bg-gray-900/80 rounded p-1 border border-gray-700">
+                  <button onClick={() => setZoomRange(prev => ({...prev, start: Math.min(prev.start + 15, prev.end - 10)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomIn className="w-4 h-4 text-gray-300"/></button>
+                  <button onClick={() => setZoomRange(prev => ({...prev, start: Math.max(0, prev.start - 15)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomOut className="w-4 h-4 text-gray-300"/></button>
                 </div>
 
-                {/* Main Price Chart */}
-                <div className="flex-1 min-h-[280px]">
+                <div className="flex-1 min-h-[250px] mt-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 10}} minTickGap={20} />
-                      <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 10}} orientation="right" width={45} />
+                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} />
+                      <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 9}} orientation="right" width={40} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
-                      
-                      {chartType === 'candle' ? (
-                        <Bar dataKey="close" shape={<Candlestick />} />
-                      ) : (
-                        <Line type="step" dataKey="close" stroke="#3b82f6" dot={false} strokeWidth={2} />
-                      )}
-
-                      {/* Moving Averages */}
+                      {chartType === 'candle' ? <Bar dataKey="close" shape={<Candlestick />} /> : <Line type="step" dataKey="close" stroke="#3b82f6" dot={false} strokeWidth={2} />}
                       <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} />
                       <Line type="monotone" dataKey="ma20" stroke="#10b981" dot={false} strokeWidth={1} />
                       <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} />
-                      {timeframe === 'daily' ? (
-                        <Line type="monotone" dataKey="ma200" stroke="#8b5cf6" dot={false} strokeWidth={2} />
-                      ) : (
-                        <Line type="monotone" dataKey="ma40" stroke="#8b5cf6" dot={false} strokeWidth={2} />
-                      )}
+                      <Line type="monotone" dataKey={timeframe === 'daily' ? "ma200" : "ma40"} stroke="#8b5cf6" dot={false} strokeWidth={2} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* Sub Volume Chart */}
-                <div className="h-24 shrink-0 mt-2">
+                <div className="h-20 shrink-0 mb-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)}>
                       <XAxis dataKey="date" hide />
-                      <YAxis stroke="#6b7280" tick={{fontSize: 10}} orientation="right" width={45} />
+                      <YAxis stroke="#6b7280" tick={{fontSize: 9}} orientation="right" width={40} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
                       <Bar dataKey="volume">
                         {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
