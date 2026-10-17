@@ -262,7 +262,7 @@ export default function App() {
                         
                         // 1. WEEKLY INSIDE BAR LOGIC
                         if (type === 'insideBar') {
-                            const recentDataLines = lines.slice(-40); // Need ~40 days to safely get last 2 weeks
+                            const recentDataLines = lines.slice(-40); 
                             let parsedDataForWeekly = [];
                             recentDataLines.forEach(rowStr => {
                                 const r = rowStr.split(',');
@@ -279,8 +279,8 @@ export default function App() {
                             });
                             const weekly = aggregateToWeekly(parsedDataForWeekly);
                             if (weekly.length >= 2) {
-                                const w1 = weekly[weekly.length - 2]; // Previous Week
-                                const w2 = weekly[weekly.length - 1]; // Current Week
+                                const w1 = weekly[weekly.length - 2];
+                                const w2 = weekly[weekly.length - 1];
                                 if (w2.high < w1.high && w2.low > w1.low) {
                                     return sym;
                                 }
@@ -317,7 +317,7 @@ export default function App() {
         results = [...results, ...batchResults.filter(Boolean)];
         setScanProgress(Math.floor((Math.min(i + batchSize, listToScan.length) / listToScan.length) * 100));
         
-        await new Promise(r => setTimeout(r, 10)); // Yield to browser main thread
+        await new Promise(r => setTimeout(r, 10)); 
     }
     
     setScreenerResults(results);
@@ -385,7 +385,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Added extra padding-bottom (pb-24) to ensure the last items in the grid do not get clipped by mobile safe-areas or browser bars */}
             <div className="flex-1 overflow-y-auto px-4 pb-24 h-full">
               {isScreening ? (
                 <div className="flex flex-col items-center justify-center pt-12 space-y-4">
@@ -430,7 +429,6 @@ export default function App() {
             </div>
           </header>
 
-          {/* MAIN CHART CONTAINER: Forced to exact 70vh to take exactly 70% of device screen */}
           <main className="w-full h-[70dvh] flex flex-col relative shrink-0 p-1">
             <button onClick={() => navigateStock('prev')} className="absolute left-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowLeft className="w-4 h-4 text-gray-300" /></button>
             <button onClick={() => navigateStock('next')} className="absolute right-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowRight className="w-4 h-4 text-gray-300" /></button>
@@ -439,18 +437,18 @@ export default function App() {
             
             {!loading && stockData.length > 0 && (
               <>
-                <div className="absolute top-2 right-10 z-20 flex space-x-1 bg-gray-900/80 rounded p-1 border border-gray-700">
+                <div className="absolute top-2 right-16 z-20 flex space-x-1 bg-gray-900/80 rounded p-1 border border-gray-700">
                   <button onClick={() => setZoomRange(p => ({...p, start: Math.min(p.start + 15, p.end - 10)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomIn className="w-4 h-4"/></button>
                   <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomOut className="w-4 h-4"/></button>
                 </div>
 
-                {/* UPPER PANEL: PRICE CHART (70% of the allocated 70vh) */}
+                {/* UPPER PANEL: PRICE CHART */}
                 <div className="h-[70%] w-full pt-1">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} hide />
-                      <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 9}} orientation="right" width={45} />
+                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
+                      <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 11, fill: '#ffffff', fontWeight: 'bold'}} orientation="right" width={55} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
                       
                       <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
@@ -461,13 +459,13 @@ export default function App() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* LOWER PANEL: VOLUME CHART (30% of the allocated 70vh) */}
+                {/* LOWER PANEL: VOLUME CHART */}
                 <div className="h-[30%] w-full border-t border-gray-800 pt-1 pb-1">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} />
-                      <YAxis domain={[0, 'auto']} stroke="#6b7280" tick={{fontSize: 8}} tickFormatter={formatIndianNumber} orientation="right" width={45} />
+                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
+                      <YAxis domain={[0, 'auto']} stroke="#6b7280" tick={{fontSize: 11, fill: '#ffffff', fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
                       
                       <Bar dataKey="volume" isAnimationActive={false}>
