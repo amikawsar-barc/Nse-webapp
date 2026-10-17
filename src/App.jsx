@@ -96,7 +96,7 @@ export default function App() {
 
   const [screenerParams, setScreenerParams] = useState(() => {
     const saved = localStorage.getItem('equiscreen_params');
-    return saved ? JSON.parse(saved) : { highPct: 25, lowPct: 50 };
+    return saved ? JSON.parse(saved) : { highPct: 25, lowPct: 50, insideBarCount: 1 };
   });
 
   const [watchlists, setWatchlists] = useState(() => {
@@ -277,7 +277,8 @@ export default function App() {
                         const closeIdx = headers.findIndex(h => h.includes('close'));
                         
                         if (type === 'insideBar') {
-                            const recentDataLines = lines.slice(-40); 
+                            // Fetch slightly more data to ensure we have enough full weeks (60 days = ~12 weeks)
+                            const recentDataLines = lines.slice(-60); 
                             let parsedDataForWeekly = [];
                             recentDataLines.forEach(rowStr => {
                                 const r = rowStr.split(',');
@@ -293,12 +294,22 @@ export default function App() {
                                 }
                             });
                             const weekly = aggregateToWeekly(parsedDataForWeekly);
-                            if (weekly.length >= 2) {
-                                const w1 = weekly[weekly.length - 2];
-                                const w2 = weekly[weekly.length - 1];
-                                if (w2.high < w1.high && w2.low > w1.low) {
-                                    return sym;
+                            const n = screenerParams.insideBarCount || 1;
+                            
+                            // Check if we have enough weeks to compare (we need N + 1 weeks)
+                            if (weekly.length >= n + 1) {
+                                let isMatch = true;
+                                // Loop backwards from the most recent week
+                                for (let j = 0; j < n; j++) {
+                                    const currentWeek = weekly[weekly.length - 1 - j];
+                                    const prevWeek = weekly[weekly.length - 2 - j];
+                                    
+                                    if (!(currentWeek.high < prevWeek.high && currentWeek.low > prevWeek.low)) {
+                                        isMatch = false;
+                                        break;
+                                    }
                                 }
+                                if (isMatch) return sym;
                             }
                             return null;
                         }
@@ -377,6 +388,22 @@ export default function App() {
             <div className="flex items-center gap-2 mb-4">
               <input type="range" min="0" max="1000" step="5" value={screenerParams.lowPct} onChange={(e) => setScreenerParams({...screenerParams, lowPct: parseInt(e.target.value)})} className="flex-1" />
               <span className="text-sm font-bold w-12 text-right">{screenerParams.lowPct}%</span>
+            </div>
+
+            {/* NEW: Inside Bar Config */}
+            <label className={`block text-sm ${textMuted} mb-1 mt-4`}>Consecutive Weekly Inside Bars</label>
+            <p className={`text-[11px] ${textMuted} mb-2`}>Number of consecutive inside bars to screen for</p>
+            <div className="flex items-center gap-2 mb-6">
+              <input 
+                type="range" 
+                min="1" 
+                max="3" 
+                step="1" 
+                value={screenerParams.insideBarCount || 1} 
+                onChange={(e) => setScreenerParams({...screenerParams, insideBarCount: parseInt(e.target.value)})} 
+                className="flex-1" 
+              />
+              <span className="text-sm font-bold w-12 text-right">{screenerParams.insideBarCount || 1} Wk</span>
             </div>
 
             <button onClick={() => setShowScreenerConfig(false)} className="w-full py-2 bg-blue-600 text-white rounded font-medium">Save Parameters</button>
