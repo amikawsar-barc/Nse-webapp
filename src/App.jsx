@@ -1,32 +1,66 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from 'recharts';
-import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, AlertCircle, Play } from 'lucide-react';
+import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play } from 'lucide-react';
 
-// FLAWLESS CANDLESTICK FOR RECHARTS
+const formatIndianNumber = (val) => {
+  if (val >= 10000000) return (val / 10000000).toFixed(1) + 'Cr';
+  if (val >= 100000) return (val / 100000).toFixed(1) + 'L';
+  if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+  return val;
+};
+
+// 1. Candlestick Shape
 const Candlestick = (props) => {
   const { x, y, width, height, payload } = props;
   if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) return null;
-  
   const { open, close, high, low } = payload;
   const isGrowing = close >= open;
   const color = isGrowing ? '#22c55e' : '#ef4444';
-  
   const priceDiff = high - low;
-  // If priceDiff is 0 (flat candle), just draw a 1px line
   const pxPerPrice = priceDiff === 0 ? 0 : height / priceDiff;
-  
   const bodyTopVal = Math.max(open, close);
   const bodyBottomVal = Math.min(open, close);
-  
   const bodyY = y + (high - bodyTopVal) * pxPerPrice;
   const bodyHeight = Math.max((bodyTopVal - bodyBottomVal) * pxPerPrice, 1);
-  
   return (
     <g stroke={color} fill={color} strokeWidth="1.5">
-      {priceDiff > 0 ? <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y + height} /> : null}
+      {priceDiff > 0 && <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y + height} />}
       <rect x={x} y={bodyY} width={width} height={bodyHeight} />
     </g>
   );
+};
+
+// 2. OHLC Price Bar Shape (Replaces standard Line)
+const OHLCBar = (props) => {
+  const { x, y, width, height, payload } = props;
+  if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) return null;
+  const { open, close, high, low } = payload;
+  const isGrowing = close >= open;
+  const color = isGrowing ? '#22c55e' : '#ef4444';
+  const priceDiff = high - low;
+  const pxPerPrice = priceDiff === 0 ? 0 : height / priceDiff;
+  const yHigh = y;
+  const yLow = y + height;
+  const yOpen = y + (high - open) * pxPerPrice;
+  const yClose = y + (high - close) * pxPerPrice;
+  const midX = x + width / 2;
+  return (
+    <g stroke={color} fill="none" strokeWidth="1.5">
+      <line x1={midX} y1={yHigh} x2={midX} y2={yLow} />
+      <line x1={x} y1={yOpen} x2={midX} y2={yOpen} />
+      <line x1={midX} y1={yClose} x2={x + width} y2={yClose} />
+    </g>
+  );
+};
+
+// 3. Custom Volume Bar (Color-coded to match candles)
+const CustomVolumeBar = (props) => {
+  const { x, y, width, height, payload } = props;
+  if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) return null;
+  const { open, close } = payload;
+  const isGrowing = close >= open;
+  const color = isGrowing ? '#22c55e80' : '#ef444480';
+  return <rect x={x} y={y} width={width} height={height} fill={color} />;
 };
 
 export default function App() {
@@ -51,7 +85,6 @@ export default function App() {
   const [fetchingStockList, setFetchingStockList] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Screener states & config
   const [screenerResults, setScreenerResults] = useState([]);
   const [activeScreener, setActiveScreener] = useState(null);
   const [isScreening, setIsScreening] = useState(false);
@@ -71,7 +104,6 @@ export default function App() {
   useEffect(() => { localStorage.setItem('equiscreen_watchlists', JSON.stringify(watchlists)); }, [watchlists]);
   useEffect(() => { localStorage.setItem('equiscreen_params', JSON.stringify(screenerParams)); }, [screenerParams]);
 
-  // Load stock list
   const loadStockListFromRepo = async () => {
     setFetchingStockList(true);
     try {
@@ -101,7 +133,6 @@ export default function App() {
 
   useEffect(() => { loadStockListFromRepo(); }, [githubUser, githubRepo]);
 
-  // Aggregate daily data to weekly OHLC
   const aggregateToWeekly = (dailyData) => {
     if (!dailyData || dailyData.length === 0) return [];
     let weekly = [];
@@ -114,9 +145,7 @@ export default function App() {
       const weekKey = `${dateObj.getFullYear()}-W${weekNum}`;
 
       if (!currentWeek || currentWeek.weekKey !== weekKey) {
-        if (currentWeek) {
-            weekly.push({ ...currentWeek, candleRange: [currentWeek.low, currentWeek.high] });
-        }
+        if (currentWeek) weekly.push({ ...currentWeek, candleRange: [currentWeek.low, currentWeek.high] });
         currentWeek = { ...day, weekKey };
       } else {
         currentWeek.high = Math.max(currentWeek.high, day.high);
@@ -134,9 +163,20 @@ export default function App() {
       for (let i = 0; i < period; i++) sum += data[idx - i].close;
       return { ...item, [key]: sum / period };
     });
+    const calcVolSMA = (data, period, key) => data.map((item, idx) => {
+      if (idx < period - 1) return { ...item, [key]: null };
+      let sum = 0;
+      for (let i = 0; i < period; i++) sum += data[idx - i].volume;
+      return { ...item, [key]: sum / period };
+    });
+
     weekly = calcSMA(weekly, 10, 'ma10');
     weekly = calcSMA(weekly, 20, 'ma20');
     weekly = calcSMA(weekly, 40, 'ma40');
+    
+    // Weekly Volume MAs
+    weekly = calcVolSMA(weekly, 20, 'vol_ma20');
+    weekly = calcVolSMA(weekly, 50, 'vol_ma50');
     return weekly;
   };
 
@@ -174,7 +214,7 @@ export default function App() {
         const close = parseFloat(row[closeIdx]);
         const volume = parseFloat(row[volIdx]) || 0;
         
-        if (!isNaN(close) && !isNaN(open)) {
+        if (!isNaN(close) && !isNaN(open) && !isNaN(high) && !isNaN(low)) {
           parsedData.push({ date, open, high, low, close, volume, candleRange: [low, high] });
         }
       }
@@ -187,10 +227,22 @@ export default function App() {
         for (let i = 0; i < period; i++) sum += data[idx - i].close;
         return { ...item, [key]: sum / period };
       });
+      const calcVolSMA = (data, period, key) => data.map((item, idx) => {
+        if (idx < period - 1) return { ...item, [key]: null };
+        let sum = 0;
+        for (let i = 0; i < period; i++) sum += data[idx - i].volume;
+        return { ...item, [key]: sum / period };
+      });
+
+      // Daily Price MAs
       parsedData = calcDailySMA(parsedData, 10, 'ma10');
       parsedData = calcDailySMA(parsedData, 20, 'ma20');
       parsedData = calcDailySMA(parsedData, 50, 'ma50');
       parsedData = calcDailySMA(parsedData, 200, 'ma200');
+      
+      // Daily Volume MAs
+      parsedData = calcVolSMA(parsedData, 20, 'vol_ma20');
+      parsedData = calcVolSMA(parsedData, 50, 'vol_ma50');
 
       let finalDataset = timeframe === 'weekly' ? aggregateToWeekly(parsedData) : parsedData;
       setStockData(finalDataset);
@@ -202,11 +254,8 @@ export default function App() {
 
   useEffect(() => { if (selectedStock) fetchStockData(selectedStock); }, [selectedStock, timeframe]);
 
-  // LIVE LIVE SCANNER
   const runLiveScan = async (type) => {
     setIsScreening(true); setActiveScreener(type); setScreenerResults([]); setScanProgress(0);
-    
-    // Scan up to first 250 stocks to prevent browser crash, or users watchlists if active
     const listToScan = availableStocks.slice(0, 150); 
     const results = [];
     
@@ -219,14 +268,14 @@ export default function App() {
             if (res.ok) {
                 const text = await res.text();
                 const lines = text.trim().replace(/\r/g, '').split('\n');
-                if (lines.length > 20) { // needs history
+                if (lines.length > 20) {
                     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
                     const highIdx = headers.findIndex(h => h.includes('high'));
                     const lowIdx = headers.findIndex(h => h.includes('low'));
                     const closeIdx = headers.findIndex(h => h.includes('close'));
                     
                     let max52w = 0, min52w = 999999;
-                    const recentData = lines.slice(-250); // approx 1 year
+                    const recentData = lines.slice(-250);
                     recentData.forEach(rowStr => {
                         const r = rowStr.split(',');
                         const h = parseFloat(r[highIdx]); const l = parseFloat(r[lowIdx]);
@@ -264,26 +313,20 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
       
-      {/* SCREENER CONFIG MODAL */}
       {showScreenerConfig && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gray-800 rounded p-6 w-full max-w-sm">
             <h3 className="text-lg font-bold mb-4 text-blue-400">Screener Settings</h3>
-            
             <label className="block text-sm text-gray-300 mb-1">Within X% of 52-Week High</label>
             <div className="flex items-center gap-2 mb-4">
               <input type="range" min="1" max="20" value={screenerParams.highPct} onChange={(e) => setScreenerParams({...screenerParams, highPct: parseInt(e.target.value)})} className="flex-1" />
               <span className="text-sm font-bold w-10 text-right">{screenerParams.highPct}%</span>
             </div>
-            
             <label className="block text-sm text-gray-300 mb-1">More than Y% above 52-Week Low</label>
             <div className="flex items-center gap-2 mb-4">
               <input type="range" min="5" max="100" step="5" value={screenerParams.lowPct} onChange={(e) => setScreenerParams({...screenerParams, lowPct: parseInt(e.target.value)})} className="flex-1" />
               <span className="text-sm font-bold w-10 text-right">{screenerParams.lowPct}%</span>
             </div>
-
-            <p className="text-xs text-gray-500 italic mb-4">* Market Cap filtering requires external fundamental data source.</p>
-
             <button onClick={() => setShowScreenerConfig(false)} className="w-full py-2 bg-blue-600 rounded font-medium">Save Settings</button>
           </div>
         </div>
@@ -349,7 +392,7 @@ export default function App() {
               </div>
               <div className="bg-gray-800 rounded p-1 flex">
                 <button onClick={() => setChartType('candle')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'candle' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Cnd</button>
-                <button onClick={() => setChartType('bar')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'bar' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Line</button>
+                <button onClick={() => setChartType('bar')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'bar' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Bar</button>
               </div>
             </div>
           </header>
@@ -375,11 +418,8 @@ export default function App() {
                       <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 9}} orientation="right" width={40} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
                       
-                      {chartType === 'candle' ? (
-                        <Bar dataKey="candleRange" shape={<Candlestick />} />
-                      ) : (
-                        <Line type="step" dataKey="close" stroke="#3b82f6" dot={false} strokeWidth={2} />
-                      )}
+                      {/* TOGGLE BETWEEN CANDLE AND OHLC PRICE BAR */}
+                      <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
                       
                       <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} />
                       <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} />
@@ -388,17 +428,17 @@ export default function App() {
                   </ResponsiveContainer>
                 </div>
 
-                <div className="h-20 shrink-0 mb-1">
+                <div className="h-24 shrink-0 mb-1 border-t border-gray-800 pt-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)}>
                       <XAxis dataKey="date" hide />
-                      <YAxis stroke="#6b7280" tick={{fontSize: 9}} orientation="right" width={40} />
-                      <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
-                      <Bar dataKey="volume">
-                        {stockData.slice(zoomRange.start, zoomRange.end).map((entry, idx) => (
-                          <Cell key={`vol-${idx}`} fill={entry.close >= entry.open ? '#22c55e80' : '#ef444480'} />
-                        ))}
-                      </Bar>
+                      <YAxis stroke="#6b7280" tick={{fontSize: 9}} tickFormatter={formatIndianNumber} orientation="right" width={40} />
+                      <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} formatter={(value) => formatIndianNumber(value)} />
+                      
+                      {/* Custom Volume Bar and Volume Moving Averages */}
+                      <Bar dataKey="volume" shape={<CustomVolumeBar />} />
+                      <Line type="monotone" dataKey="vol_ma20" stroke="#f59e0b" dot={false} strokeWidth={1.5} />
+                      <Line type="monotone" dataKey="vol_ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
