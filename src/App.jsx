@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from 'recharts';
-import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play } from 'lucide-react';
+import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play, BarChart2 } from 'lucide-react';
 
 const formatIndianNumber = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '0';
@@ -237,11 +237,9 @@ export default function App() {
 
   useEffect(() => { if (selectedStock) fetchStockData(selectedStock); }, [selectedStock, timeframe]);
 
-  // LIVE SCREENER - FIX: INCREMENTAL BATCH SCAN TO PREVENT UI FREEZE, SCAN ENTIRE LIST
   const runLiveScan = async (type) => {
     setIsScreening(true); setActiveScreener(type); setScreenerResults([]); setScanProgress(0);
     
-    // We will scan the *entire* available list to maximize results, but in batches of 25 to prevent browser freeze.
     const listToScan = availableStocks; 
     let results = [];
     const batchSize = 25;
@@ -256,10 +254,41 @@ export default function App() {
                     const lines = text.trim().replace(/\r/g, '').split('\n');
                     if (lines.length > 20) {
                         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        const dateIdx = headers.findIndex(h => h.includes('date'));
+                        const openIdx = headers.findIndex(h => h.includes('open'));
                         const highIdx = headers.findIndex(h => h.includes('high'));
                         const lowIdx = headers.findIndex(h => h.includes('low'));
                         const closeIdx = headers.findIndex(h => h.includes('close'));
                         
+                        // 1. WEEKLY INSIDE BAR LOGIC
+                        if (type === 'insideBar') {
+                            const recentDataLines = lines.slice(-40); // Need ~40 days to safely get last 2 weeks
+                            let parsedDataForWeekly = [];
+                            recentDataLines.forEach(rowStr => {
+                                const r = rowStr.split(',');
+                                if(r.length > closeIdx) {
+                                    parsedDataForWeekly.push({
+                                        date: r[dateIdx]?.split(' ')[0] || '',
+                                        open: parseFloat(r[openIdx]),
+                                        high: parseFloat(r[highIdx]),
+                                        low: parseFloat(r[lowIdx]),
+                                        close: parseFloat(r[closeIdx]),
+                                        volume: 0
+                                    });
+                                }
+                            });
+                            const weekly = aggregateToWeekly(parsedDataForWeekly);
+                            if (weekly.length >= 2) {
+                                const w1 = weekly[weekly.length - 2]; // Previous Week
+                                const w2 = weekly[weekly.length - 1]; // Current Week
+                                if (w2.high < w1.high && w2.low > w1.low) {
+                                    return sym;
+                                }
+                            }
+                            return null;
+                        }
+
+                        // 2. 52 WEEK HIGH/LOW LOGIC
                         let max52w = 0, min52w = 999999;
                         const recentData = lines.slice(-250); 
                         recentData.forEach(rowStr => {
@@ -288,8 +317,7 @@ export default function App() {
         results = [...results, ...batchResults.filter(Boolean)];
         setScanProgress(Math.floor((Math.min(i + batchSize, listToScan.length) / listToScan.length) * 100));
         
-        // Yield to browser main thread
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise(r => setTimeout(r, 10)); // Yield to browser main thread
     }
     
     setScreenerResults(results);
@@ -344,19 +372,21 @@ export default function App() {
             <button onClick={() => setActiveTab('watchlist')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'watchlist' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>Watchlists</button>
           </div>
 
-          <div className="flex-1 overflow-hidden flex flex-col p-4 bg-gray-950">
-            <div className="mb-3 shrink-0">
+          <div className="flex-1 overflow-hidden flex flex-col bg-gray-950">
+            <div className="shrink-0 p-4 pb-2">
               {activeTab === 'screener' && (
                 <div className="flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden items-center">
                   <button onClick={() => setShowScreenerConfig(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-300 shrink-0"><SlidersHorizontal className="w-4 h-4" /></button>
                   <button onClick={() => runLiveScan('52wHigh')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wHigh' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><TrendingUp className="w-3.5 h-3.5 mr-1" /> Near High (&ge;{(100-screenerParams.highPct)}%)</button>
                   <button onClick={() => runLiveScan('52wLow')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wLow' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><Play className="w-3.5 h-3.5 mr-1" /> Above Low (&ge;{screenerParams.lowPct}%)</button>
                   <button onClick={() => runLiveScan('combined')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'combined' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}>Combined Filter</button>
+                  <button onClick={() => runLiveScan('insideBar')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'insideBar' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><BarChart2 className="w-3.5 h-3.5 mr-1" /> Weekly Inside Bar</button>
                 </div>
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto pb-6">
+            {/* Added extra padding-bottom (pb-24) to ensure the last items in the grid do not get clipped by mobile safe-areas or browser bars */}
+            <div className="flex-1 overflow-y-auto px-4 pb-24 h-full">
               {isScreening ? (
                 <div className="flex flex-col items-center justify-center pt-12 space-y-4">
                   <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
@@ -367,8 +397,8 @@ export default function App() {
                 <>
                   {activeTab === 'screener' && screenerResults.length > 0 && <div className="text-xs text-gray-500 mb-2">Found {screenerResults.length} matches.</div>}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {(activeTab === 'all' ? availableStocks.slice(0, 100) : activeTab === 'screener' ? screenerResults : watchlists[currentWatchlist] || []).map(stock => (
-                      <div key={stock} onClick={() => { setSelectedStock(stock); setView('chart'); }} className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between">
+                    {(activeTab === 'all' ? availableStocks : activeTab === 'screener' ? screenerResults : watchlists[currentWatchlist] || []).map(stock => (
+                      <div key={stock} onClick={() => { setSelectedStock(stock); setView('chart'); }} className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between items-center">
                         <h3 className="font-bold">{stock}</h3>
                         <span className="text-xs px-2 py-1 bg-blue-950 text-blue-400 rounded">Chart</span>
                       </div>
@@ -382,7 +412,7 @@ export default function App() {
       )}
 
       {view === 'chart' && (
-        <div className="flex flex-col h-full w-full relative">
+        <div className="flex flex-col h-[100dvh] w-full bg-gray-950 relative overflow-hidden">
           <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-2 shrink-0 z-20">
             <div className="flex items-center">
               <button onClick={() => setView('main')} className="p-2 mr-1 hover:bg-gray-800 rounded-full"><ArrowLeft className="w-5 h-5 text-gray-300" /></button>
@@ -400,7 +430,8 @@ export default function App() {
             </div>
           </header>
 
-          <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-950 p-1 w-full h-[calc(100%-3.5rem)]">
+          {/* MAIN CHART CONTAINER: Forced to exact 70vh to take exactly 70% of device screen */}
+          <main className="w-full h-[70dvh] flex flex-col relative shrink-0 p-1">
             <button onClick={() => navigateStock('prev')} className="absolute left-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowLeft className="w-4 h-4 text-gray-300" /></button>
             <button onClick={() => navigateStock('next')} className="absolute right-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowRight className="w-4 h-4 text-gray-300" /></button>
 
@@ -413,8 +444,8 @@ export default function App() {
                   <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomOut className="w-4 h-4"/></button>
                 </div>
 
-                {/* UPPER PANEL: PRICE CHART - Using exact percentage heights instead of flex to prevent mobile overflow */}
-                <div className="h-[75%] w-full pt-2">
+                {/* UPPER PANEL: PRICE CHART (70% of the allocated 70vh) */}
+                <div className="h-[70%] w-full pt-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
@@ -430,8 +461,8 @@ export default function App() {
                   </ResponsiveContainer>
                 </div>
 
-                {/* LOWER PANEL: DEDICATED VOLUME CHART */}
-                <div className="h-[25%] w-full border-t border-gray-800 pt-1 pb-1">
+                {/* LOWER PANEL: VOLUME CHART (30% of the allocated 70vh) */}
+                <div className="h-[30%] w-full border-t border-gray-800 pt-1 pb-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
