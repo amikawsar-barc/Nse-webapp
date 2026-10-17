@@ -24,7 +24,7 @@ const Candlestick = (props) => {
 
 export default function App() {
   // Configuration for GitHub Repository
-  const [githubUser, setGithubUser] = useState(localStorage.getItem('gh_user') || 'amikaw');
+  const [githubUser, setGithubUser] = useState(localStorage.getItem('gh_user') || 'amikawsar-barc');
   const [githubRepo, setGithubRepo] = useState(localStorage.getItem('gh_repo') || 'nse-stock-track');
   const [githubBranch, setGithubBranch] = useState(localStorage.getItem('gh_branch') || 'main');
   const [showSettings, setShowSettings] = useState(false);
