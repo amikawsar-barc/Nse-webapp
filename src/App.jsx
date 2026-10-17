@@ -10,7 +10,6 @@ const formatIndianNumber = (val) => {
   return val.toString();
 };
 
-// 1. Candlestick Shape
 const Candlestick = (props) => {
   const { x, y, width, height, payload } = props;
   if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) return null;
@@ -31,7 +30,6 @@ const Candlestick = (props) => {
   );
 };
 
-// 2. OHLC Price Bar Shape
 const OHLCBar = (props) => {
   const { x, y, width, height, payload } = props;
   if (x === undefined || y === undefined || width === undefined || height === undefined || !payload) return null;
@@ -74,14 +72,12 @@ export default function App() {
 
   const [availableStocks, setAvailableStocks] = useState([]);
   const [fetchingStockList, setFetchingStockList] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   
   const [screenerResults, setScreenerResults] = useState([]);
   const [activeScreener, setActiveScreener] = useState(null);
   const [isScreening, setIsScreening] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
 
-  // UPDATED SCREENER PARAMS: High Pct up to 75%, Low Pct up to 1000%
   const [screenerParams, setScreenerParams] = useState(() => {
     const saved = localStorage.getItem('equiscreen_params');
     return saved ? JSON.parse(saved) : { highPct: 25, lowPct: 50 };
@@ -117,7 +113,7 @@ export default function App() {
         if (symbols.length > 0) setAvailableStocks(symbols);
       }
     } catch (err) {
-      setAvailableStocks(['RELIANCE', 'TCS', 'HDFCBANK']);
+      setAvailableStocks(['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'ITC', 'SBIN']);
     } finally {
       setFetchingStockList(false);
     }
@@ -165,8 +161,6 @@ export default function App() {
     weekly = calcSMA(weekly, 10, 'ma10');
     weekly = calcSMA(weekly, 20, 'ma20');
     weekly = calcSMA(weekly, 40, 'ma40');
-    
-    // Weekly Volume MAs (20, 50)
     weekly = calcVolSMA(weekly, 20, 'vol_ma20');
     weekly = calcVolSMA(weekly, 50, 'vol_ma50');
     return weekly;
@@ -181,7 +175,7 @@ export default function App() {
         const altBranch = githubBranch === 'main' ? 'master' : 'main';
         response = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/data/${cleanSymbol}_data.csv`);
       }
-      if (!response.ok) throw new Error(`Data for ${cleanSymbol} not found`);
+      if (!response.ok) throw new Error(`Data not found`);
       
       const text = await response.text();
       const lines = text.trim().replace(/\r/g, '').split('\n');
@@ -226,13 +220,10 @@ export default function App() {
         return { ...item, [key]: sum / period };
       });
 
-      // Daily Price MAs
       parsedData = calcDailySMA(parsedData, 10, 'ma10');
       parsedData = calcDailySMA(parsedData, 20, 'ma20');
       parsedData = calcDailySMA(parsedData, 50, 'ma50');
       parsedData = calcDailySMA(parsedData, 200, 'ma200');
-      
-      // Daily Volume MAs (20, 50)
       parsedData = calcVolSMA(parsedData, 20, 'vol_ma20');
       parsedData = calcVolSMA(parsedData, 50, 'vol_ma50');
 
@@ -246,60 +237,64 @@ export default function App() {
 
   useEffect(() => { if (selectedStock) fetchStockData(selectedStock); }, [selectedStock, timeframe]);
 
-  // LIVE SCREENER ENGINE WITH UPDATED CONDITIONS
+  // LIVE SCREENER - FIX: INCREMENTAL BATCH SCAN TO PREVENT UI FREEZE, SCAN ENTIRE LIST
   const runLiveScan = async (type) => {
     setIsScreening(true); setActiveScreener(type); setScreenerResults([]); setScanProgress(0);
-    const listToScan = availableStocks.slice(0, 150); 
-    const results = [];
     
-    for (let i = 0; i < listToScan.length; i++) {
-        const sym = listToScan[i];
-        setScanProgress(Math.floor((i / listToScan.length) * 100));
-        
-        try {
-            const res = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/data/${sym}_data.csv`);
-            if (res.ok) {
-                const text = await res.text();
-                const lines = text.trim().replace(/\r/g, '').split('\n');
-                if (lines.length > 20) {
-                    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-                    const highIdx = headers.findIndex(h => h.includes('high'));
-                    const lowIdx = headers.findIndex(h => h.includes('low'));
-                    const closeIdx = headers.findIndex(h => h.includes('close'));
-                    
-                    let max52w = 0, min52w = 999999;
-                    const recentData = lines.slice(-250); // ~1 year of trading days
-                    recentData.forEach(rowStr => {
-                        const r = rowStr.split(',');
-                        const h = parseFloat(r[highIdx]); const l = parseFloat(r[lowIdx]);
-                        if (h > max52w) max52w = h;
-                        if (l < min52w) min52w = l;
-                    });
-                    
-                    const lastRow = recentData[recentData.length - 1].split(',');
-                    const currentClose = parseFloat(lastRow[closeIdx]);
-                    
-                    // User requirements:
-                    // Price >= 52W_High * (1 - highPct/100)  [e.g. >= 52W_High * 0.75 for 25% max change]
-                    // Price >= 52W_Low * (1 + lowPct/100)   [e.g. >= 52W_Low * 1.50 for 50% above low]
-                    const minHighThreshold = max52w * (1 - screenerParams.highPct / 100);
-                    const minLowThreshold = min52w * (1 + screenerParams.lowPct / 100);
+    // We will scan the *entire* available list to maximize results, but in batches of 25 to prevent browser freeze.
+    const listToScan = availableStocks; 
+    let results = [];
+    const batchSize = 25;
 
-                    if (type === '52wHigh') {
-                        if (currentClose >= minHighThreshold) results.push(sym);
-                    } else if (type === '52wLow') {
-                        if (currentClose >= minLowThreshold) results.push(sym);
-                    } else if (type === 'combined') {
-                        if (currentClose >= minHighThreshold && currentClose >= minLowThreshold) results.push(sym);
+    for (let i = 0; i < listToScan.length; i += batchSize) {
+        const batch = listToScan.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (sym) => {
+            try {
+                const res = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/data/${sym}_data.csv`);
+                if (res.ok) {
+                    const text = await res.text();
+                    const lines = text.trim().replace(/\r/g, '').split('\n');
+                    if (lines.length > 20) {
+                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        const highIdx = headers.findIndex(h => h.includes('high'));
+                        const lowIdx = headers.findIndex(h => h.includes('low'));
+                        const closeIdx = headers.findIndex(h => h.includes('close'));
+                        
+                        let max52w = 0, min52w = 999999;
+                        const recentData = lines.slice(-250); 
+                        recentData.forEach(rowStr => {
+                            const r = rowStr.split(',');
+                            const h = parseFloat(r[highIdx]); const l = parseFloat(r[lowIdx]);
+                            if (h > max52w) max52w = h;
+                            if (l < min52w) min52w = l;
+                        });
+                        
+                        const lastRow = recentData[recentData.length - 1].split(',');
+                        const currentClose = parseFloat(lastRow[closeIdx]);
+                        
+                        const minHighThreshold = max52w * (1 - screenerParams.highPct / 100);
+                        const minLowThreshold = min52w * (1 + screenerParams.lowPct / 100);
+
+                        if (type === '52wHigh' && currentClose >= minHighThreshold) return sym;
+                        if (type === '52wLow' && currentClose >= minLowThreshold) return sym;
+                        if (type === 'combined' && currentClose >= minHighThreshold && currentClose >= minLowThreshold) return sym;
                     }
                 }
-            }
-        } catch(e) {}
+            } catch(e) {}
+            return null;
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results = [...results, ...batchResults.filter(Boolean)];
+        setScanProgress(Math.floor((Math.min(i + batchSize, listToScan.length) / listToScan.length) * 100));
+        
+        // Yield to browser main thread
+        await new Promise(r => setTimeout(r, 10));
     }
     
     setScreenerResults(results);
     setScanProgress(100);
-    setTimeout(() => setIsScreening(false), 500);
+    setIsScreening(false);
   };
 
   const navigateStock = (dir) => {
@@ -310,9 +305,8 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
+    <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans overflow-hidden">
       
-      {/* SCREENER CONFIG MODAL */}
       {showScreenerConfig && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-gray-800 rounded p-6 w-full max-w-sm">
@@ -328,7 +322,7 @@ export default function App() {
             <label className="block text-sm text-gray-300 mb-1">Min % Above 52W Low</label>
             <p className="text-[11px] text-gray-400 mb-2">Price &ge; 52W_Low &times; {(1 + screenerParams.lowPct/100).toFixed(2)}</p>
             <div className="flex items-center gap-2 mb-4">
-              <input type="range" min="0" max="1000" step="10" value={screenerParams.lowPct} onChange={(e) => setScreenerParams({...screenerParams, lowPct: parseInt(e.target.value)})} className="flex-1" />
+              <input type="range" min="0" max="1000" step="5" value={screenerParams.lowPct} onChange={(e) => setScreenerParams({...screenerParams, lowPct: parseInt(e.target.value)})} className="flex-1" />
               <span className="text-sm font-bold w-12 text-right">{screenerParams.lowPct}%</span>
             </div>
 
@@ -354,10 +348,10 @@ export default function App() {
             <div className="mb-3 shrink-0">
               {activeTab === 'screener' && (
                 <div className="flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden items-center">
-                  <button onClick={() => setShowScreenerConfig(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-300"><SlidersHorizontal className="w-4 h-4" /></button>
-                  <button onClick={() => runLiveScan('52wHigh')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wHigh' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'}`}><TrendingUp className="w-3.5 h-3.5 mr-1" /> Near High (&ge;{(100-screenerParams.highPct)}%)</button>
-                  <button onClick={() => runLiveScan('52wLow')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wLow' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'}`}><Play className="w-3.5 h-3.5 mr-1" /> Above Low (&ge;{screenerParams.lowPct}%)</button>
-                  <button onClick={() => runLiveScan('combined')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'combined' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'}`}>Combined Filter</button>
+                  <button onClick={() => setShowScreenerConfig(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-300 shrink-0"><SlidersHorizontal className="w-4 h-4" /></button>
+                  <button onClick={() => runLiveScan('52wHigh')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wHigh' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><TrendingUp className="w-3.5 h-3.5 mr-1" /> Near High (&ge;{(100-screenerParams.highPct)}%)</button>
+                  <button onClick={() => runLiveScan('52wLow')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wLow' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><Play className="w-3.5 h-3.5 mr-1" /> Above Low (&ge;{screenerParams.lowPct}%)</button>
+                  <button onClick={() => runLiveScan('combined')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'combined' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}>Combined Filter</button>
                 </div>
               )}
             </div>
@@ -366,18 +360,21 @@ export default function App() {
               {isScreening ? (
                 <div className="flex flex-col items-center justify-center pt-12 space-y-4">
                   <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-                  <p className="text-gray-400 text-sm">Live Scanning Market... {scanProgress}%</p>
+                  <p className="text-gray-400 text-sm">Scanning {availableStocks.length} Stocks... {scanProgress}%</p>
                   <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${scanProgress}%`}}></div></div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(activeTab === 'all' ? availableStocks.slice(0, 100) : activeTab === 'screener' ? screenerResults : watchlists[currentWatchlist] || []).map(stock => (
-                    <div key={stock} onClick={() => { setSelectedStock(stock); setView('chart'); }} className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between">
-                      <h3 className="font-bold">{stock}</h3>
-                      <span className="text-xs px-2 py-1 bg-blue-950 text-blue-400 rounded">Chart</span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  {activeTab === 'screener' && screenerResults.length > 0 && <div className="text-xs text-gray-500 mb-2">Found {screenerResults.length} matches.</div>}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {(activeTab === 'all' ? availableStocks.slice(0, 100) : activeTab === 'screener' ? screenerResults : watchlists[currentWatchlist] || []).map(stock => (
+                      <div key={stock} onClick={() => { setSelectedStock(stock); setView('chart'); }} className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between">
+                        <h3 className="font-bold">{stock}</h3>
+                        <span className="text-xs px-2 py-1 bg-blue-950 text-blue-400 rounded">Chart</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -385,7 +382,7 @@ export default function App() {
       )}
 
       {view === 'chart' && (
-        <div className="flex flex-col h-full relative">
+        <div className="flex flex-col h-full w-full relative">
           <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-2 shrink-0 z-20">
             <div className="flex items-center">
               <button onClick={() => setView('main')} className="p-2 mr-1 hover:bg-gray-800 rounded-full"><ArrowLeft className="w-5 h-5 text-gray-300" /></button>
@@ -403,7 +400,7 @@ export default function App() {
             </div>
           </header>
 
-          <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-950 p-1">
+          <main className="flex-1 flex flex-col relative overflow-hidden bg-gray-950 p-1 w-full h-[calc(100%-3.5rem)]">
             <button onClick={() => navigateStock('prev')} className="absolute left-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowLeft className="w-4 h-4 text-gray-300" /></button>
             <button onClick={() => navigateStock('next')} className="absolute right-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowRight className="w-4 h-4 text-gray-300" /></button>
 
@@ -416,8 +413,8 @@ export default function App() {
                   <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomOut className="w-4 h-4"/></button>
                 </div>
 
-                {/* UPPER PANEL: PRICE CHART */}
-                <div className="flex-[3] min-h-[220px] w-full pt-2">
+                {/* UPPER PANEL: PRICE CHART - Using exact percentage heights instead of flex to prevent mobile overflow */}
+                <div className="h-[75%] w-full pt-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
@@ -425,10 +422,7 @@ export default function App() {
                       <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 9}} orientation="right" width={45} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
                       
-                      {/* TOGGLE BETWEEN CANDLESTICK & OHLC PRICE BAR */}
                       <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
-                      
-                      {/* PRICE MOVING AVERAGES */}
                       <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
                       <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} name="SMA 50" />
                       <Line type="monotone" dataKey={timeframe === 'daily' ? "ma200" : "ma40"} stroke="#8b5cf6" dot={false} strokeWidth={2} name={timeframe === 'daily' ? "SMA 200" : "SMA 40"} />
@@ -437,7 +431,7 @@ export default function App() {
                 </div>
 
                 {/* LOWER PANEL: DEDICATED VOLUME CHART */}
-                <div className="flex-[1] min-h-[90px] w-full border-t border-gray-800 pt-1">
+                <div className="h-[25%] w-full border-t border-gray-800 pt-1 pb-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
@@ -445,14 +439,12 @@ export default function App() {
                       <YAxis domain={[0, 'auto']} stroke="#6b7280" tick={{fontSize: 8}} tickFormatter={formatIndianNumber} orientation="right" width={45} />
                       <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
                       
-                      {/* GUARANTEED VOLUME BARS */}
                       <Bar dataKey="volume" isAnimationActive={false}>
                         {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
                           <Cell key={`vol-cell-${index}`} fill={entry.close >= entry.open ? '#22c55e' : '#ef4444'} opacity={0.65} />
                         ))}
                       </Bar>
 
-                      {/* VOLUME MOVING AVERAGES (20, 50) */}
                       <Line type="monotone" dataKey="vol_ma20" stroke="#f59e0b" dot={false} strokeWidth={1.2} name="Vol SMA 20" />
                       <Line type="monotone" dataKey="vol_ma50" stroke="#ec4899" dot={false} strokeWidth={1.2} name="Vol SMA 50" />
                     </ComposedChart>
