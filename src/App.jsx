@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from 'recharts';
-import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play, BarChart2 } from 'lucide-react';
+import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play, BarChart2, Star, Sun, Moon } from 'lucide-react';
 
 const formatIndianNumber = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '0';
@@ -58,6 +58,22 @@ export default function App() {
   const [githubBranch, setGithubBranch] = useState(localStorage.getItem('gh_branch') || 'main');
   const [showSettings, setShowSettings] = useState(false);
   const [showScreenerConfig, setShowScreenerConfig] = useState(false);
+
+  // --- THEME STATE ---
+  const [theme, setTheme] = useState(() => localStorage.getItem('equiscreen_theme') || 'dark');
+  useEffect(() => { localStorage.setItem('equiscreen_theme', theme); }, [theme]);
+  
+  const isDark = theme === 'dark';
+  const bgMain = isDark ? 'bg-gray-950 text-gray-100' : 'bg-white text-gray-900';
+  const bgPanel = isDark ? 'bg-gray-900' : 'bg-gray-100';
+  const borderCol = isDark ? 'border-gray-800' : 'border-gray-300';
+  const textMuted = isDark ? 'text-gray-400' : 'text-gray-500';
+  const btnBg = isDark ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-200 border border-gray-300';
+  const gridColor = isDark ? '#1f2937' : '#e5e7eb';
+  const tickColor = isDark ? '#ffffff' : '#000000';
+  const axisText = isDark ? '#6b7280' : '#6b7280';
+  const tooltipBg = isDark ? '#111827' : '#ffffff';
+  const tooltipBorder = isDark ? '#374151' : '#d1d5db';
 
   const [view, setView] = useState('main'); 
   const [activeTab, setActiveTab] = useState('screener'); 
@@ -260,7 +276,6 @@ export default function App() {
                         const lowIdx = headers.findIndex(h => h.includes('low'));
                         const closeIdx = headers.findIndex(h => h.includes('close'));
                         
-                        // 1. WEEKLY INSIDE BAR LOGIC
                         if (type === 'insideBar') {
                             const recentDataLines = lines.slice(-40); 
                             let parsedDataForWeekly = [];
@@ -288,7 +303,6 @@ export default function App() {
                             return null;
                         }
 
-                        // 2. 52 WEEK HIGH/LOW LOGIC
                         let max52w = 0, min52w = 999999;
                         const recentData = lines.slice(-250); 
                         recentData.forEach(rowStr => {
@@ -332,55 +346,71 @@ export default function App() {
     if (dir === 'prev' && idx > 0) setSelectedStock(list[idx - 1]);
   };
 
+  const toggleWatchlist = () => {
+    const list = watchlists[currentWatchlist] || [];
+    if (list.includes(selectedStock)) {
+      setWatchlists({...watchlists, [currentWatchlist]: list.filter(s => s !== selectedStock)});
+    } else {
+      setWatchlists({...watchlists, [currentWatchlist]: [...list, selectedStock]});
+    }
+  };
+
+  const isWatchlisted = (watchlists[currentWatchlist] || []).includes(selectedStock);
+
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-gray-950 text-gray-100 font-sans overflow-hidden">
+    <div className={`flex flex-col h-[100dvh] w-full ${bgMain} font-sans overflow-hidden`}>
       
       {showScreenerConfig && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-gray-800 rounded p-6 w-full max-w-sm">
-            <h3 className="text-lg font-bold mb-4 text-blue-400">Screener Parameters</h3>
+          <div className={`${bgPanel} border ${borderCol} rounded p-6 w-full max-w-sm`}>
+            <h3 className="text-lg font-bold mb-4 text-blue-500">Screener Parameters</h3>
             
-            <label className="block text-sm text-gray-300 mb-1">Max % Distance from 52W High</label>
-            <p className="text-[11px] text-gray-400 mb-2">Price &ge; 52W_High &times; {(1 - screenerParams.highPct/100).toFixed(2)}</p>
+            <label className={`block text-sm ${textMuted} mb-1`}>Max % Distance from 52W High</label>
+            <p className={`text-[11px] ${textMuted} mb-2`}>Price &ge; 52W_High &times; {(1 - screenerParams.highPct/100).toFixed(2)}</p>
             <div className="flex items-center gap-2 mb-4">
               <input type="range" min="1" max="75" value={screenerParams.highPct} onChange={(e) => setScreenerParams({...screenerParams, highPct: parseInt(e.target.value)})} className="flex-1" />
               <span className="text-sm font-bold w-12 text-right">{screenerParams.highPct}%</span>
             </div>
             
-            <label className="block text-sm text-gray-300 mb-1">Min % Above 52W Low</label>
-            <p className="text-[11px] text-gray-400 mb-2">Price &ge; 52W_Low &times; {(1 + screenerParams.lowPct/100).toFixed(2)}</p>
+            <label className={`block text-sm ${textMuted} mb-1`}>Min % Above 52W Low</label>
+            <p className={`text-[11px] ${textMuted} mb-2`}>Price &ge; 52W_Low &times; {(1 + screenerParams.lowPct/100).toFixed(2)}</p>
             <div className="flex items-center gap-2 mb-4">
               <input type="range" min="0" max="1000" step="5" value={screenerParams.lowPct} onChange={(e) => setScreenerParams({...screenerParams, lowPct: parseInt(e.target.value)})} className="flex-1" />
               <span className="text-sm font-bold w-12 text-right">{screenerParams.lowPct}%</span>
             </div>
 
-            <button onClick={() => setShowScreenerConfig(false)} className="w-full py-2 bg-blue-600 rounded font-medium">Save Parameters</button>
+            <button onClick={() => setShowScreenerConfig(false)} className="w-full py-2 bg-blue-600 text-white rounded font-medium">Save Parameters</button>
           </div>
         </div>
       )}
 
       {view === 'main' && (
         <>
-          <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
-            <div><h1 className="text-lg font-bold text-blue-400">EquiScreen Pro</h1></div>
-            <button onClick={() => setShowSettings(!showSettings)} className="p-2 bg-gray-800 rounded text-gray-300"><Settings className="w-4 h-4" /></button>
+          <div className={`flex items-center justify-between px-4 py-3 ${bgPanel} border-b ${borderCol} shrink-0`}>
+            <div><h1 className="text-lg font-bold text-blue-500">EquiScreen Pro</h1></div>
+            <div className="flex gap-2">
+              <button onClick={() => setTheme(isDark ? 'light' : 'dark')} className={`p-2 rounded ${btnBg}`}>
+                {isDark ? <Sun className="w-4 h-4 text-gray-300" /> : <Moon className="w-4 h-4 text-gray-600" />}
+              </button>
+              <button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded ${btnBg}`}><Settings className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-600'}`} /></button>
+            </div>
           </div>
 
-          <div className="flex bg-gray-900 border-b border-gray-800 shrink-0">
-            <button onClick={() => setActiveTab('all')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'all' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>All</button>
-            <button onClick={() => setActiveTab('screener')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'screener' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>Screeners</button>
-            <button onClick={() => setActiveTab('watchlist')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'watchlist' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400'}`}>Watchlists</button>
+          <div className={`flex ${bgPanel} border-b ${borderCol} shrink-0`}>
+            <button onClick={() => setActiveTab('all')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'all' ? 'border-b-2 border-blue-500 text-blue-500' : textMuted}`}>All</button>
+            <button onClick={() => setActiveTab('screener')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'screener' ? 'border-b-2 border-blue-500 text-blue-500' : textMuted}`}>Screeners</button>
+            <button onClick={() => setActiveTab('watchlist')} className={`flex-1 py-3 text-sm font-semibold ${activeTab === 'watchlist' ? 'border-b-2 border-blue-500 text-blue-500' : textMuted}`}>Watchlists</button>
           </div>
 
-          <div className="flex-1 overflow-hidden flex flex-col bg-gray-950">
+          <div className={`flex-1 overflow-hidden flex flex-col ${bgMain}`}>
             <div className="shrink-0 p-4 pb-2">
               {activeTab === 'screener' && (
                 <div className="flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden items-center">
-                  <button onClick={() => setShowScreenerConfig(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-300 shrink-0"><SlidersHorizontal className="w-4 h-4" /></button>
-                  <button onClick={() => runLiveScan('52wHigh')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wHigh' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><TrendingUp className="w-3.5 h-3.5 mr-1" /> Near High (&ge;{(100-screenerParams.highPct)}%)</button>
-                  <button onClick={() => runLiveScan('52wLow')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wLow' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><Play className="w-3.5 h-3.5 mr-1" /> Above Low (&ge;{screenerParams.lowPct}%)</button>
-                  <button onClick={() => runLiveScan('combined')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'combined' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}>Combined Filter</button>
-                  <button onClick={() => runLiveScan('insideBar')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'insideBar' ? 'bg-blue-900 border-blue-500 text-blue-300' : 'bg-gray-800 border-gray-700'} shrink-0`}><BarChart2 className="w-3.5 h-3.5 mr-1" /> Weekly Inside Bar</button>
+                  <button onClick={() => setShowScreenerConfig(true)} className={`p-2 rounded-lg border ${btnBg} shrink-0`}><SlidersHorizontal className="w-4 h-4" /></button>
+                  <button onClick={() => runLiveScan('52wHigh')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wHigh' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}><TrendingUp className="w-3.5 h-3.5 mr-1" /> Near High (&ge;{(100-screenerParams.highPct)}%)</button>
+                  <button onClick={() => runLiveScan('52wLow')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === '52wLow' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}><Play className="w-3.5 h-3.5 mr-1" /> Above Low (&ge;{screenerParams.lowPct}%)</button>
+                  <button onClick={() => runLiveScan('combined')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'combined' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}>Combined Filter</button>
+                  <button onClick={() => runLiveScan('insideBar')} className={`whitespace-nowrap px-3 py-2 rounded-lg text-xs flex items-center border ${activeScreener === 'insideBar' ? 'bg-blue-900 border-blue-500 text-blue-300' : btnBg} shrink-0`}><BarChart2 className="w-3.5 h-3.5 mr-1" /> Weekly Inside Bar</button>
                 </div>
               )}
             </div>
@@ -389,17 +419,17 @@ export default function App() {
               {isScreening ? (
                 <div className="flex flex-col items-center justify-center pt-12 space-y-4">
                   <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-                  <p className="text-gray-400 text-sm">Scanning {availableStocks.length} Stocks... {scanProgress}%</p>
-                  <div className="w-64 h-2 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${scanProgress}%`}}></div></div>
+                  <p className={`text-sm ${textMuted}`}>Scanning {availableStocks.length} Stocks... {scanProgress}%</p>
+                  <div className={`w-64 h-2 ${isDark ? 'bg-gray-800' : 'bg-gray-200'} rounded-full overflow-hidden`}><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${scanProgress}%`}}></div></div>
                 </div>
               ) : (
                 <>
-                  {activeTab === 'screener' && screenerResults.length > 0 && <div className="text-xs text-gray-500 mb-2">Found {screenerResults.length} matches.</div>}
+                  {activeTab === 'screener' && screenerResults.length > 0 && <div className={`text-xs ${textMuted} mb-2`}>Found {screenerResults.length} matches.</div>}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {(activeTab === 'all' ? availableStocks : activeTab === 'screener' ? screenerResults : watchlists[currentWatchlist] || []).map(stock => (
-                      <div key={stock} onClick={() => { setSelectedStock(stock); setView('chart'); }} className="bg-gray-900 border border-gray-800 p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between items-center">
+                      <div key={stock} onClick={() => { setSelectedStock(stock); setView('chart'); }} className={`${bgPanel} border ${borderCol} p-4 rounded-lg cursor-pointer hover:border-blue-500 flex justify-between items-center`}>
                         <h3 className="font-bold">{stock}</h3>
-                        <span className="text-xs px-2 py-1 bg-blue-950 text-blue-400 rounded">Chart</span>
+                        <span className={`text-xs px-2 py-1 ${isDark ? 'bg-blue-950 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded`}>Chart</span>
                       </div>
                     ))}
                   </div>
@@ -411,45 +441,51 @@ export default function App() {
       )}
 
       {view === 'chart' && (
-        <div className="flex flex-col h-[100dvh] w-full bg-gray-950 relative overflow-hidden">
-          <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-2 shrink-0 z-20">
+        <div className={`flex flex-col h-[100dvh] w-full ${bgMain} relative overflow-hidden`}>
+          <header className={`h-14 ${bgPanel} border-b ${borderCol} flex items-center justify-between px-2 shrink-0 z-20`}>
             <div className="flex items-center">
-              <button onClick={() => setView('main')} className="p-2 mr-1 hover:bg-gray-800 rounded-full"><ArrowLeft className="w-5 h-5 text-gray-300" /></button>
-              <div><h2 className="text-base font-bold leading-tight">{selectedStock}</h2><span className="text-[10px] text-gray-400 uppercase">{timeframe}</span></div>
+              <button onClick={() => setView('main')} className={`p-2 mr-1 rounded-full ${btnBg}`}><ArrowLeft className={`w-5 h-5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} /></button>
+              <div className="flex items-center">
+                <div><h2 className="text-base font-bold leading-tight">{selectedStock}</h2><span className={`text-[10px] ${textMuted} uppercase`}>{timeframe}</span></div>
+                <button onClick={toggleWatchlist} className="ml-3 p-1 rounded-full hover:bg-black/10">
+                  <Star className={`w-5 h-5 ${isWatchlisted ? 'fill-yellow-500 text-yellow-500' : textMuted}`} />
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-1">
-              <div className="bg-gray-800 rounded p-1 flex">
-                <button onClick={() => setTimeframe('daily')} className={`px-2 py-1 text-xs rounded font-semibold ${timeframe === 'daily' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>D</button>
-                <button onClick={() => setTimeframe('weekly')} className={`px-2 py-1 text-xs rounded font-semibold ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>W</button>
+              <div className={`rounded p-1 flex ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                <button onClick={() => setTimeframe('daily')} className={`px-2 py-1 text-xs rounded font-semibold ${timeframe === 'daily' ? 'bg-blue-600 text-white' : textMuted}`}>D</button>
+                <button onClick={() => setTimeframe('weekly')} className={`px-2 py-1 text-xs rounded font-semibold ${timeframe === 'weekly' ? 'bg-blue-600 text-white' : textMuted}`}>W</button>
               </div>
-              <div className="bg-gray-800 rounded p-1 flex">
-                <button onClick={() => setChartType('candle')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'candle' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Cnd</button>
-                <button onClick={() => setChartType('bar')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'bar' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Bar</button>
+              <div className={`rounded p-1 flex ${isDark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+                <button onClick={() => setChartType('candle')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'candle' ? (isDark?'bg-gray-600 text-white':'bg-white text-black') : textMuted}`}>Cnd</button>
+                <button onClick={() => setChartType('bar')} className={`px-2 py-1 text-xs rounded font-semibold ${chartType === 'bar' ? (isDark?'bg-gray-600 text-white':'bg-white text-black') : textMuted}`}>Bar</button>
               </div>
             </div>
           </header>
 
           <main className="w-full h-[70dvh] flex flex-col relative shrink-0 p-1">
-            <button onClick={() => navigateStock('prev')} className="absolute left-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowLeft className="w-4 h-4 text-gray-300" /></button>
-            <button onClick={() => navigateStock('next')} className="absolute right-1 top-1/3 z-30 p-1.5 bg-gray-900/80 rounded-full border border-gray-700 -translate-y-1/2"><ArrowRight className="w-4 h-4 text-gray-300" /></button>
+            <button onClick={() => navigateStock('prev')} className={`absolute left-1 top-1/3 z-30 p-1.5 rounded-full border ${btnBg} -translate-y-1/2`}><ArrowLeft className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} /></button>
+            <button onClick={() => navigateStock('next')} className={`absolute right-1 top-1/3 z-30 p-1.5 rounded-full border ${btnBg} -translate-y-1/2`}><ArrowRight className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} /></button>
 
-            {loading && <div className="absolute inset-0 z-40 bg-gray-950/80 flex items-center justify-center"><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>}
+            {loading && <div className={`absolute inset-0 z-40 ${isDark ? 'bg-gray-950/80' : 'bg-white/80'} flex items-center justify-center`}><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>}
             
             {!loading && stockData.length > 0 && (
               <>
-                <div className="absolute top-2 right-16 z-20 flex space-x-1 bg-gray-900/80 rounded p-1 border border-gray-700">
-                  <button onClick={() => setZoomRange(p => ({...p, start: Math.min(p.start + 15, p.end - 10)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomIn className="w-4 h-4"/></button>
-                  <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className="p-1 hover:bg-gray-800 rounded"><ZoomOut className="w-4 h-4"/></button>
+                {/* ZOOM CONTROLS MOVED TO LEFT SIDE */}
+                <div className={`absolute top-2 left-2 z-20 flex space-x-1 ${bgPanel} bg-opacity-90 rounded p-1 border ${borderCol}`}>
+                  <button onClick={() => setZoomRange(p => ({...p, start: Math.min(p.start + 15, p.end - 10)}))} className={`p-1 rounded ${btnBg}`}><ZoomIn className={`w-4 h-4 ${isDark ? 'text-white' : 'text-black'}`}/></button>
+                  <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className={`p-1 rounded ${btnBg}`}><ZoomOut className={`w-4 h-4 ${isDark ? 'text-white' : 'text-black'}`}/></button>
                 </div>
 
                 {/* UPPER PANEL: PRICE CHART */}
                 <div className="h-[70%] w-full pt-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
-                      <YAxis domain={['auto', 'auto']} stroke="#6b7280" tick={{fontSize: 11, fill: '#ffffff', fontWeight: 'bold'}} orientation="right" width={55} />
-                      <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                      <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
+                      <YAxis domain={['auto', 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} orientation="right" width={55} />
+                      <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
                       
                       <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
                       <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
@@ -460,13 +496,13 @@ export default function App() {
                 </div>
 
                 {/* LOWER PANEL: VOLUME CHART */}
-                <div className="h-[30%] w-full border-t border-gray-800 pt-1 pb-1">
+                <div className={`h-[30%] w-full border-t ${borderCol} pt-1 pb-1`}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
-                      <XAxis dataKey="date" stroke="#6b7280" tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
-                      <YAxis domain={[0, 'auto']} stroke="#6b7280" tick={{fontSize: 11, fill: '#ffffff', fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
-                      <Tooltip contentStyle={{backgroundColor: '#111827', borderColor: '#374151', fontSize: '11px'}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                      <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
+                      <YAxis domain={[0, 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
+                      <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
                       
                       <Bar dataKey="volume" isAnimationActive={false}>
                         {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
