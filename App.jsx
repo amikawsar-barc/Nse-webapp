@@ -39,31 +39,51 @@ export default function App() {
   const [screenerResults, setScreenerResults] = useState(allStocks);
 
   const fetchStockData = async (symbol) => {
-    const generateMockData = (days) => {
-      let data = [];
-      let basePrice = 1000 + Math.random() * 2000;
-      let date = new Date();
-      date.setDate(date.getDate() - days);
-      for(let i=0; i<days; i++) {
-        date.setDate(date.getDate() + 1);
-        if (date.getDay() === 0 || date.getDay() === 6) continue;
-        let open = basePrice + (Math.random() - 0.5) * 20;
-        let close = open + (Math.random() - 0.5) * 30;
-        let high = Math.max(open, close) + Math.random() * 15;
-        let low = Math.min(open, close) - Math.random() * 15;
-        let volume = Math.floor(Math.random() * 1000000) + 500000;
-        data.push({
-          date: date.toISOString().split('T')[0],
-          open, high, low, close, volume, 
-          ma10: close * 0.99, ma20: close * 0.98, ma50: close * 0.95, ma200: close * 0.90
+    const url = `https://raw.githubusercontent.com/amikawsar-bar/nse-stock-track/main/data/${symbol}_data.csv`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Data not found");
+     
+      const csvText = await response.text();
+      const rows = csvText.trim().split('\n').slice(1); // Skip header
+     
+      let data = rows.map(row => {
+        const [date, open, high, low, close, volume] = row.split(',');
+        return {
+          date: date.split(' ')[0], // Extract just the YYYY-MM-DD
+          open: parseFloat(open),
+          high: parseFloat(high),
+          low: parseFloat(low),
+          close: parseFloat(close),
+          volume: parseInt(volume),
+          // Set placeholder 0s for MAs; we will calculate them below
+          ma10: 0, ma20: 0, ma50: 0, ma200: 0
+        };
+      }).filter(item => !isNaN(item.close)); // Remove any invalid rows
+
+      // Calculate Simple Moving Averages
+      const calculateSMA = (data, period) => {
+        return data.map((item, index) => {
+          if (index < period - 1) return { ...item }; // Not enough data yet
+          let sum = 0;
+          for (let i = 0; i < period; i++) sum += data[index - i].close;
+          return { ...item, [`ma${period}`]: sum / period };
         });
-        basePrice = close;
-      }
-      return data;
-    };
-    const data = generateMockData(800);
-    setStockData(data);
-    setZoomRange({ start: Math.max(0, data.length - 100), end: data.length });
+      };
+
+      data = calculateSMA(data, 10);
+      data = calculateSMA(data, 20);
+      data = calculateSMA(data, 50);
+      data = calculateSMA(data, 200);
+
+      setStockData(data);
+      // Zoom into the most recent 100 days by default
+      setZoomRange({ start: Math.max(0, data.length - 100), end: data.length });
+     
+    } catch (error) {
+      console.error(`Failed to fetch data for ${symbol}:`, error);
+      setStockData([]); // Clear chart if data fails
+    }
   };
 
   useEffect(() => { if (selectedStock) fetchStockData(selectedStock); }, [selectedStock, timeframe]);
