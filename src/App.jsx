@@ -111,7 +111,7 @@ export default function App() {
 
   const [watchlists, setWatchlists] = useState(() => {
     const saved = localStorage.getItem('equiscreen_watchlists');
-    return saved ? JSON.parse(saved) : { 'My Favorites': [{ symbol: 'RELIANCE', mcap: 0 }, { symbol: 'TCS', mcap: 0 }] };
+    return saved ? JSON.parse(saved) : { 'My Favorites': [{ symbol: 'RELIANCE', mcap: 19000000000000 }, { symbol: 'TCS', mcap: 14000000000000 }] };
   });
   const [currentWatchlist, setCurrentWatchlist] = useState('My Favorites');
 
@@ -121,6 +121,26 @@ export default function App() {
   const loadStockListFromRepo = async () => {
     setFetchingStockList(true);
     try {
+      // 1. Fetch Market Cap mapping JSON
+      let mcapMap = {};
+      try {
+        let mcapRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/data/market_cap.json`);
+        if (!mcapRes.ok) {
+          const altBranch = githubBranch === 'main' ? 'master' : 'main';
+          mcapRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/data/market_cap.json`);
+        }
+        if (mcapRes.ok) {
+          const rawMcapMap = await mcapRes.json();
+          // Normalize keys to uppercase for matching
+          Object.keys(rawMcapMap).forEach(k => {
+            mcapMap[k.trim().toUpperCase()] = parseFloat(rawMcapMap[k]) || 0;
+          });
+        }
+      } catch (mcapErr) {
+        console.warn("Could not load market_cap.json", mcapErr);
+      }
+
+      // 2. Fetch Stock Symbol list CSV
       let response = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/EQUITY_L.csv`);
       if (!response.ok) {
         const altBranch = githubBranch === 'main' ? 'master' : 'main';
@@ -133,18 +153,17 @@ export default function App() {
         const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toUpperCase());
         const symbolIdx = headers.findIndex(h => h === 'SYMBOL');
         const mcapIdx = headers.findIndex(h => h.includes('MARKET CAP') || h.includes('MCAP') || h.includes('MARKET_CAP') || h.includes('CAPITALISATION'));
-        const sharesIdx = headers.findIndex(h => h.includes('SHARES') || h.includes('TOTAL SHARES') || h.includes('NO OF SHARES'));
 
         let stocks = [];
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
           if (symbolIdx !== -1 && cols[symbolIdx]) {
             const sym = cols[symbolIdx].toUpperCase();
-            let mcap = 0;
-            if (mcapIdx !== -1 && cols[mcapIdx]) {
+            let mcap = mcapMap[sym] || 0;
+            
+            // Fallback to CSV header if missing in JSON
+            if (mcap === 0 && mcapIdx !== -1 && cols[mcapIdx]) {
               mcap = parseFloat(cols[mcapIdx]) || 0;
-            } else if (sharesIdx !== -1 && cols[sharesIdx]) {
-              mcap = parseFloat(cols[sharesIdx]) || 0;
             }
             stocks.push({ symbol: sym, mcap });
           }
@@ -295,7 +314,20 @@ export default function App() {
         const batch = listToScan.slice(i, i + batchSize);
         const batchPromises = batch.map(async (stockItem) => {
             const sym = typeof stockItem === 'string' ? stockItem : stockItem.symbol;
-            let currentMcap = (typeof stockItem === 'object' && stockItem.mcap) ? stockItem.mcap : 0;
+            const currentMcap = (typeof stockItem === 'object' && stockItem.mcap) ? stockItem.mcap : 0;
+
+            // Apply Lower & Upper Market Cap filter checks across all screeners
+            const minMcapCr = screenerParams.minMarketCap || 0;
+            const maxMcapCr = screenerParams.maxMarketCap || 0;
+            const minMcapVal = minMcapCr * 10000000; // Cr -> Rupees
+            const maxMcapVal = maxMcapCr * 10000000; // Cr -> Rupees
+
+            if (minMcapCr > 0 && currentMcap < minMcapVal) {
+                return null;
+            }
+            if (maxMcapCr > 0 && currentMcap > maxMcapVal) {
+                return null;
+            }
 
             try {
                 const res = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/data/${sym}_data.csv`);
@@ -313,24 +345,6 @@ export default function App() {
                         const recentData = lines.slice(-250);
                         const lastRow = recentData[recentData.length - 1].split(',');
                         const currentClose = parseFloat(lastRow[closeIdx]);
-
-                        // Calculate dynamically if mcap was total shares or 0
-                        if (currentMcap > 0 && currentMcap < 100000000) {
-                            currentMcap = currentMcap * currentClose; // Shares * Price
-                        }
-
-                        // Apply Lower & Upper Market Cap filter checks across all screeners
-                        const minMcapCr = screenerParams.minMarketCap || 0;
-                        const maxMcapCr = screenerParams.maxMarketCap || 0;
-                        const minMcapVal = minMcapCr * 10000000;
-                        const maxMcapVal = maxMcapCr * 10000000;
-
-                        if (minMcapCr > 0 && currentMcap < minMcapVal) {
-                            return null;
-                        }
-                        if (maxMcapCr > 0 && currentMcap > maxMcapVal) {
-                            return null;
-                        }
 
                         if (type === 'insideBar') {
                             const recentDataLines = lines.slice(-60); 
@@ -400,13 +414,19 @@ export default function App() {
   };
 
   const getSortedList = (list) => {
+    if (!list || list.length === 0) return [];
     return [...list].sort((a, b) => {
       const itemA = typeof a === 'string' ? { symbol: a, mcap: 0 } : a;
       const itemB = typeof b === 'string' ? { symbol: b, mcap: 0 } : b;
       
-      if (sortOrder === 'mcap_desc') return (itemB.mcap || 0) - (itemA.mcap || 0);
-      if (sortOrder === 'mcap_asc') return (itemA.mcap || 0) - (itemB.mcap || 0);
-      if (sortOrder === 'alpha_asc') return itemA.symbol.localeCompare(itemB.symbol);
+      const mcapA = Number(itemA.mcap) || 0;
+      const mcapB = Number(itemB.mcap) || 0;
+      const symA = (itemA.symbol || '').toString();
+      const symB = (itemB.symbol || '').toString();
+
+      if (sortOrder === 'mcap_desc') return mcapB - mcapA;
+      if (sortOrder === 'mcap_asc') return mcapA - mcapB;
+      if (sortOrder === 'alpha_asc') return symA.localeCompare(symB);
       return 0;
     });
   };
