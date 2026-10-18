@@ -124,10 +124,10 @@ export default function App() {
       // 1. Fetch Market Cap mapping JSON
       let mcapMap = {};
       try {
-        let mcapRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/data/market_cap.json`);
+        let mcapRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${githubBranch}/data/market_caps.json`);
         if (!mcapRes.ok) {
           const altBranch = githubBranch === 'main' ? 'master' : 'main';
-          mcapRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/data/market_cap.json`);
+          mcapRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${githubRepo}/${altBranch}/data/market_caps.json`);
         }
         if (mcapRes.ok) {
           const rawMcapMap = await mcapRes.json();
