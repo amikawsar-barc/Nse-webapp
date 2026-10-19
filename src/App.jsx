@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell } from 'recharts';
-import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play, BarChart2, Star, Sun, Moon, ArrowUpDown } from 'lucide-react';
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Bar, Cell, ReferenceLine } from 'recharts';
+import { Search, TrendingUp, ZoomIn, ZoomOut, Plus, Folder, ArrowLeft, ArrowRight, RefreshCw, Settings, SlidersHorizontal, Play, BarChart2, Star, Sun, Moon, ArrowUpDown, Edit2, Trash2, Check, X } from 'lucide-react';
 
 const formatIndianNumber = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '0';
@@ -117,6 +117,18 @@ export default function App() {
 
   // Touch state for swipe and pinch-to-zoom
   const [touchStart, setTouchStart] = useState({ x: 0, dist: 0 });
+
+  // Panel resizing
+  const [priceChartPct, setPriceChartPct] = useState(70);
+  const [isResizing, setIsResizing] = useState(false);
+  
+  // Crosshair
+  const [crosshairVal, setCrosshairVal] = useState(null);
+
+  // Watchlist Management
+  const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(null); // 'add' | 'rename'
+  const [promptInput, setPromptInput] = useState('');
+
 
   useEffect(() => { localStorage.setItem('equiscreen_watchlists', JSON.stringify(watchlists)); }, [watchlists]);
   useEffect(() => { localStorage.setItem('equiscreen_params', JSON.stringify(screenerParams)); }, [screenerParams]);
@@ -458,6 +470,87 @@ export default function App() {
   };
 
   // TOUCH EVENT HANDLERS
+  
+  // Panel Resizing Handlers
+  const handleResizeStart = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing) return;
+      const container = document.getElementById('chart-container');
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const newPct = ((e.clientY - rect.top) / rect.height) * 100;
+        if (newPct > 20 && newPct < 80) setPriceChartPct(newPct);
+      }
+    };
+    const handleTouchMoveResizer = (e) => {
+      if (!isResizing) return;
+      const container = document.getElementById('chart-container');
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const newPct = ((e.touches[0].clientY - rect.top) / rect.height) * 100;
+        if (newPct > 20 && newPct < 80) setPriceChartPct(newPct);
+      }
+    };
+    const handleMouseUp = () => setIsResizing(false);
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('touchmove', handleTouchMoveResizer);
+      window.addEventListener('touchend', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMoveResizer);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Watchlist Management Handlers
+  const handleCreateWatchlist = () => {
+    if (promptInput.trim() && !watchlists[promptInput.trim()]) {
+      setWatchlists({ ...watchlists, [promptInput.trim()]: [] });
+      setCurrentWatchlist(promptInput.trim());
+    }
+    setShowWatchlistPrompt(null);
+    setPromptInput('');
+  };
+
+  const handleRenameWatchlist = () => {
+    if (promptInput.trim() && promptInput.trim() !== currentWatchlist && !watchlists[promptInput.trim()]) {
+      const newWatchlists = { ...watchlists };
+      newWatchlists[promptInput.trim()] = newWatchlists[currentWatchlist];
+      delete newWatchlists[currentWatchlist];
+      setWatchlists(newWatchlists);
+      setCurrentWatchlist(promptInput.trim());
+    }
+    setShowWatchlistPrompt(null);
+    setPromptInput('');
+  };
+
+  const handleDeleteWatchlist = () => {
+    if (Object.keys(watchlists).length > 1) {
+      const newWatchlists = { ...watchlists };
+      delete newWatchlists[currentWatchlist];
+      setWatchlists(newWatchlists);
+      setCurrentWatchlist(Object.keys(newWatchlists)[0]);
+    } else {
+      alert("You must have at least one watchlist.");
+    }
+  };
+
+  const removeFromWatchlist = (sym, e) => {
+    e.stopPropagation();
+    const list = watchlists[currentWatchlist] || [];
+    setWatchlists({ ...watchlists, [currentWatchlist]: list.filter(s => (typeof s === 'string' ? s : s.symbol) !== sym) });
+  };
+
   const handleTouchStart = (e) => {
     if (e.touches.length === 1) {
       setTouchStart({ x: e.touches[0].clientX, dist: 0 });
@@ -516,6 +609,27 @@ export default function App() {
   return (
     <div className={`flex flex-col h-[100dvh] w-full ${bgMain} font-sans overflow-hidden`}>
       
+      
+      {showWatchlistPrompt && (
+        <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4">
+          <div className={`${bgPanel} border ${borderCol} rounded p-6 w-full max-w-sm`}>
+            <h3 className="text-lg font-bold mb-4">{showWatchlistPrompt === 'add' ? 'New Watchlist' : 'Rename Watchlist'}</h3>
+            <input 
+              type="text" 
+              autoFocus
+              value={promptInput} 
+              onChange={e => setPromptInput(e.target.value)}
+              placeholder="Watchlist Name"
+              className={`w-full p-2 border ${borderCol} rounded ${bgMain} mb-4`} 
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowWatchlistPrompt(null)} className="px-4 py-2 rounded text-sm bg-gray-500 text-white">Cancel</button>
+              <button onClick={showWatchlistPrompt === 'add' ? handleCreateWatchlist : handleRenameWatchlist} className="px-4 py-2 rounded text-sm bg-blue-600 text-white">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showScreenerConfig && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className={`${bgPanel} border ${borderCol} rounded p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto`}>
@@ -613,26 +727,47 @@ export default function App() {
                 </div>
               )}
 
+              
               {/* SORT CONTROLS BAR */}
               <div className="flex justify-between items-center mt-2 px-1">
-                <span className={`text-[11px] ${textMuted}`}>
-                  {screenerParams.minMarketCap > 0 || screenerParams.maxMarketCap > 0 
-                    ? `MCap Range: ${screenerParams.minMarketCap || 0} - ${screenerParams.maxMarketCap ? screenerParams.maxMarketCap + 'Cr' : '∞'}`
-                    : 'No MCap Range Limit'}
-                </span>
-                <div className="flex items-center gap-1">
-                  <ArrowUpDown className={`w-3.5 h-3.5 ${textMuted}`} />
-                  <select 
-                    value={sortOrder} 
-                    onChange={(e) => setSortOrder(e.target.value)}
-                    className={`text-xs p-1 rounded border ${borderCol} ${bgPanel} font-medium focus:outline-none`}
-                  >
-                    <option value="mcap_desc">MCap: High → Low</option>
-                    <option value="mcap_asc">MCap: Low → High</option>
-                    <option value="alpha_asc">Name: A → Z</option>
-                  </select>
-                </div>
+                {activeTab === 'watchlist' ? (
+                  <div className="flex items-center gap-2 w-full justify-between">
+                    <select 
+                      value={currentWatchlist} 
+                      onChange={(e) => setCurrentWatchlist(e.target.value)}
+                      className={`text-sm p-1 rounded border ${borderCol} ${bgPanel} font-bold focus:outline-none max-w-[150px] truncate`}
+                    >
+                      {Object.keys(watchlists).map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => { setPromptInput(''); setShowWatchlistPrompt('add'); }} className={`p-1.5 rounded border ${btnBg}`}><Plus className={`w-3.5 h-3.5 ${textMuted}`} /></button>
+                      <button onClick={() => { setPromptInput(currentWatchlist); setShowWatchlistPrompt('rename'); }} className={`p-1.5 rounded border ${btnBg}`}><Edit2 className={`w-3.5 h-3.5 ${textMuted}`} /></button>
+                      <button onClick={handleDeleteWatchlist} className={`p-1.5 rounded border ${btnBg}`}><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <span className={`text-[11px] ${textMuted}`}>
+                      {screenerParams.minMarketCap > 0 || screenerParams.maxMarketCap > 0 
+                        ? `MCap Range: ${screenerParams.minMarketCap || 0} - ${screenerParams.maxMarketCap ? screenerParams.maxMarketCap + 'Cr' : '∞'}`
+                        : 'No MCap Range Limit'}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <ArrowUpDown className={`w-3.5 h-3.5 ${textMuted}`} />
+                      <select 
+                        value={sortOrder} 
+                        onChange={(e) => setSortOrder(e.target.value)}
+                        className={`text-xs p-1 rounded border ${borderCol} ${bgPanel} font-medium focus:outline-none`}
+                      >
+                        <option value="mcap_desc">MCap: High → Low</option>
+                        <option value="mcap_asc">MCap: Low → High</option>
+                        <option value="alpha_asc">Name: A → Z</option>
+                      </select>
+                    </div>
+                  </>
+                )}
               </div>
+
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 pb-24 h-full">
@@ -655,7 +790,16 @@ export default function App() {
                             <h3 className="font-bold">{sym}</h3>
                             {mcapVal > 0 && <span className={`text-[11px] ${textMuted} block`}>MCap: {formatMarketCap(mcapVal)}</span>}
                           </div>
-                          <span className={`text-xs px-2 py-1 ${isDark ? 'bg-blue-950 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded`}>Chart</span>
+                          
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs px-2 py-1 ${isDark ? 'bg-blue-950 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded`}>Chart</span>
+                            {activeTab === 'watchlist' && (
+                              <button onClick={(e) => removeFromWatchlist(sym, e)} className="p-1 rounded-full hover:bg-red-500/20 text-red-500">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+
                         </div>
                       );
                     })}
@@ -709,31 +853,53 @@ export default function App() {
                   <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className={`p-1 rounded ${btnBg}`}><ZoomOut className={`w-4 h-4 ${isDark ? 'text-white' : 'text-black'}`}/></button>
                 </div>
 
-                <div className="flex-1 w-full pt-1 pb-1 flex flex-col">
+                
+                <div id="chart-container" className="flex-1 w-full pt-1 pb-1 flex flex-col relative select-none">
                   {/* Price Chart */}
-                  <div className="flex-[7] w-full">
+                  <div style={{ height: `${priceChartPct}%` }} className="w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                      <ComposedChart 
+                        data={stockData.slice(zoomRange.start, zoomRange.end)} 
+                        margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+                        onMouseMove={(e) => e && e.activePayload && setCrosshairVal(e.activePayload[0].payload)}
+                        onMouseLeave={() => setCrosshairVal(null)}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                         <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
                         <YAxis domain={['auto', 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} orientation="right" width={55} />
-                        <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
+                        <Tooltip cursor={{ stroke: textMuted, strokeWidth: 1, strokeDasharray: '3 3' }} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
                         <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
                         <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
                         <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} name="SMA 50" />
                         <Line type="monotone" dataKey={timeframe === 'daily' ? "ma200" : "ma40"} stroke="#8b5cf6" dot={false} strokeWidth={2} name={timeframe === 'daily' ? "SMA 200" : "SMA 40"} />
+                        {crosshairVal && <ReferenceLine y={crosshairVal.close} stroke={textMuted} strokeDasharray="3 3" />}
+                        {crosshairVal && <ReferenceLine x={crosshairVal.date} stroke={textMuted} strokeDasharray="3 3" />}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
 
+                  {/* Resizer */}
+                  <div 
+                    className={`h-2 w-full cursor-row-resize flex items-center justify-center ${isResizing ? 'bg-blue-500' : 'bg-transparent hover:bg-gray-500/50'} z-50`}
+                    onMouseDown={handleResizeStart}
+                    onTouchStart={handleResizeStart}
+                  >
+                    <div className={`w-12 h-1 rounded-full ${isDark ? 'bg-gray-600' : 'bg-gray-400'}`}></div>
+                  </div>
+
                   {/* Volume Chart */}
-                  <div className={`flex-[3] w-full border-t ${borderCol} pt-1`}>
+                  <div style={{ height: `${100 - priceChartPct}%` }} className={`w-full pt-1`}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
+                      <ComposedChart 
+                        data={stockData.slice(zoomRange.start, zoomRange.end)} 
+                        margin={{ top: 5, right: 0, left: 0, bottom: 5 }}
+                        onMouseMove={(e) => e && e.activePayload && setCrosshairVal(e.activePayload[0].payload)}
+                        onMouseLeave={() => setCrosshairVal(null)}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                         <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
                         <YAxis domain={[0, 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
-                        <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
+                        <Tooltip cursor={{ stroke: textMuted, strokeWidth: 1, strokeDasharray: '3 3' }} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
                         <Bar dataKey="volume" isAnimationActive={false}>
                           {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
                             <Cell key={`vol-cell-${index}`} fill={entry.close >= entry.open ? '#22c55e' : '#ef4444'} opacity={0.65} />
@@ -741,10 +907,12 @@ export default function App() {
                         </Bar>
                         <Line type="monotone" dataKey="vol_ma20" stroke="#f59e0b" dot={false} strokeWidth={1.2} name="Vol SMA 20" />
                         <Line type="monotone" dataKey="vol_ma50" stroke="#ec4899" dot={false} strokeWidth={1.2} name="Vol SMA 50" />
+                        {crosshairVal && <ReferenceLine x={crosshairVal.date} stroke={textMuted} strokeDasharray="3 3" />}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
+
               </>
             )}
           </main>
