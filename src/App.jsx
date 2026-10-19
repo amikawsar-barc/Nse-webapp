@@ -115,6 +115,9 @@ export default function App() {
   });
   const [currentWatchlist, setCurrentWatchlist] = useState('My Favorites');
 
+  // Touch state for swipe and pinch-to-zoom
+  const [touchStart, setTouchStart] = useState({ x: 0, dist: 0 });
+
   useEffect(() => { localStorage.setItem('equiscreen_watchlists', JSON.stringify(watchlists)); }, [watchlists]);
   useEffect(() => { localStorage.setItem('equiscreen_params', JSON.stringify(screenerParams)); }, [screenerParams]);
 
@@ -454,6 +457,57 @@ export default function App() {
     }
   };
 
+  // TOUCH EVENT HANDLERS
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      setTouchStart({ x: e.touches[0].clientX, dist: 0 });
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setTouchStart({ x: 0, dist });
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && touchStart.dist > 0) {
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const diff = currentDist - touchStart.dist;
+      
+      if (Math.abs(diff) > 20) {
+        if (diff > 0) {
+          // Zoom In (Fingers expanding)
+          setZoomRange(p => ({...p, start: Math.min(p.start + 5, p.end - 10)}));
+        } else {
+          // Zoom Out (Fingers squeezing)
+          setZoomRange(p => ({...p, start: Math.max(0, p.start - 5)}));
+        }
+        setTouchStart(prev => ({ ...prev, dist: currentDist }));
+      }
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.changedTouches.length === 1 && touchStart.x > 0) {
+      const touchEndX = e.changedTouches[0].clientX;
+      const diffX = touchStart.x - touchEndX;
+      
+      // Swipe left (next)
+      if (diffX > 50) {
+        navigateStock('next');
+      } 
+      // Swipe right (prev)
+      else if (diffX < -50) {
+        navigateStock('prev');
+      }
+      setTouchStart({ x: 0, dist: 0 });
+    }
+  };
+
   const currentSelectedSym = typeof selectedStock === 'string' ? selectedStock : selectedStock?.symbol;
   const isWatchlisted = (watchlists[currentWatchlist] || []).some(s => (typeof s === 'string' ? s : s.symbol) === currentSelectedSym);
 
@@ -640,10 +694,12 @@ export default function App() {
             </div>
           </header>
 
-          <main className="w-full h-[70dvh] flex flex-col relative shrink-0 p-1">
-            <button onClick={() => navigateStock('prev')} className={`absolute left-1 top-1/3 z-30 p-1.5 rounded-full border ${btnBg} -translate-y-1/2`}><ArrowLeft className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} /></button>
-            <button onClick={() => navigateStock('next')} className={`absolute right-1 top-1/3 z-30 p-1.5 rounded-full border ${btnBg} -translate-y-1/2`}><ArrowRight className={`w-4 h-4 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} /></button>
-
+          <main 
+            className="w-full flex-1 flex flex-col relative shrink-0 p-1"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
             {loading && <div className={`absolute inset-0 z-40 ${isDark ? 'bg-gray-950/80' : 'bg-white/80'} flex items-center justify-center`}><RefreshCw className="w-8 h-8 text-blue-500 animate-spin" /></div>}
             
             {!loading && stockData.length > 0 && (
@@ -653,44 +709,69 @@ export default function App() {
                   <button onClick={() => setZoomRange(p => ({...p, start: Math.max(0, p.start - 15)}))} className={`p-1 rounded ${btnBg}`}><ZoomOut className={`w-4 h-4 ${isDark ? 'text-white' : 'text-black'}`}/></button>
                 </div>
 
-                <div className="h-[70%] w-full pt-1">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-                      <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
-                      <YAxis domain={['auto', 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} orientation="right" width={55} />
-                      <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
-                      
-                      <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
-                      <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
-                      <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} name="SMA 50" />
-                      <Line type="monotone" dataKey={timeframe === 'daily' ? "ma200" : "ma40"} stroke="#8b5cf6" dot={false} strokeWidth={2} name={timeframe === 'daily' ? "SMA 200" : "SMA 40"} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
+                <div className="flex-1 w-full pt-1 pb-1 flex flex-col">
+                  {/* Price Chart */}
+                  <div className="flex-[7] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                        <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
+                        <YAxis domain={['auto', 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} orientation="right" width={55} />
+                        <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
+                        <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
+                        <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
+                        <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} name="SMA 50" />
+                        <Line type="monotone" dataKey={timeframe === 'daily' ? "ma200" : "ma40"} stroke="#8b5cf6" dot={false} strokeWidth={2} name={timeframe === 'daily' ? "SMA 200" : "SMA 40"} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
 
-                <div className={`h-[30%] w-full border-t ${borderCol} pt-1 pb-1`}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-                      <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
-                      <YAxis domain={[0, 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
-                      <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
-                      
-                      <Bar dataKey="volume" isAnimationActive={false}>
-                        {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
-                          <Cell key={`vol-cell-${index}`} fill={entry.close >= entry.open ? '#22c55e' : '#ef4444'} opacity={0.65} />
-                        ))}
-                      </Bar>
-
-                      <Line type="monotone" dataKey="vol_ma20" stroke="#f59e0b" dot={false} strokeWidth={1.2} name="Vol SMA 20" />
-                      <Line type="monotone" dataKey="vol_ma50" stroke="#ec4899" dot={false} strokeWidth={1.2} name="Vol SMA 50" />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  {/* Volume Chart */}
+                  <div className={`flex-[3] w-full border-t ${borderCol} pt-1`}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={stockData.slice(zoomRange.start, zoomRange.end)} margin={{ top: 5, right: 0, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                        <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
+                        <YAxis domain={[0, 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
+                        <Tooltip contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
+                        <Bar dataKey="volume" isAnimationActive={false}>
+                          {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
+                            <Cell key={`vol-cell-${index}`} fill={entry.close >= entry.open ? '#22c55e' : '#ef4444'} opacity={0.65} />
+                          ))}
+                        </Bar>
+                        <Line type="monotone" dataKey="vol_ma20" stroke="#f59e0b" dot={false} strokeWidth={1.2} name="Vol SMA 20" />
+                        <Line type="monotone" dataKey="vol_ma50" stroke="#ec4899" dot={false} strokeWidth={1.2} name="Vol SMA 50" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </>
             )}
           </main>
+
+          {/* New Bottom Control Bar (Arrows + Market Cap) */}
+          <footer className={`h-16 ${bgPanel} border-t ${borderCol} flex items-center justify-between px-6 shrink-0 z-20`}>
+            <button 
+              onClick={() => navigateStock('prev')} 
+              className={`p-3 rounded-lg border ${btnBg} flex items-center justify-center`}
+            >
+              <ArrowLeft className={`w-6 h-6 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />
+            </button>
+            
+            <div className="flex flex-col items-center justify-center">
+              <span className={`text-xs ${textMuted} uppercase tracking-wider`}>Market Cap</span>
+              <span className={`text-sm font-bold ${isDark ? 'text-white' : 'text-black'}`}>
+                {selectedStock && selectedStock.mcap > 0 ? formatMarketCap(selectedStock.mcap) : 'N/A'}
+              </span>
+            </div>
+
+            <button 
+              onClick={() => navigateStock('next')} 
+              className={`p-3 rounded-lg border ${btnBg} flex items-center justify-center`}
+            >
+              <ArrowRight className={`w-6 h-6 ${isDark ? 'text-gray-300' : 'text-gray-700'}`} />
+            </button>
+          </footer>
         </div>
       )}
     </div>
