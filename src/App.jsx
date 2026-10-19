@@ -866,7 +866,21 @@ export default function App() {
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                         <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
                         <YAxis domain={['auto', 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} orientation="right" width={55} />
-                        <Tooltip cursor={false} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
+                        <Tooltip 
+                          cursor={false} 
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div style={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, padding: '4px 8px', borderRadius: '4px', zIndex: 100 }}>
+                                  <div style={{ color: textMuted, fontSize: '10px', marginBottom: '2px' }}>{data.date}</div>
+                                  <div style={{ color: tickColor, fontSize: '11px', fontWeight: 'bold' }}>Close: {data.close.toFixed(2)}</div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }} 
+                        />
                         <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
                         <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
                         <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} name="SMA 50" />
@@ -898,7 +912,21 @@ export default function App() {
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                         <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
                         <YAxis domain={[0, 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
-                        <Tooltip cursor={false} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
+                        <Tooltip 
+                          cursor={false} 
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div style={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, padding: '4px 8px', borderRadius: '4px', zIndex: 100 }}>
+                                  <div style={{ color: textMuted, fontSize: '10px', marginBottom: '2px' }}>{data.date}</div>
+                                  <div style={{ color: tickColor, fontSize: '11px', fontWeight: 'bold' }}>Vol: {formatIndianNumber(data.volume)}</div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }} 
+                        />
                         <Bar dataKey="volume" isAnimationActive={false}>
                           {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
                             <Cell key={`vol-cell-${index}`} fill={entry.close >= entry.open ? '#22c55e' : '#ef4444'} opacity={0.65} />
