@@ -731,11 +731,11 @@ export default function App() {
               {/* SORT CONTROLS BAR */}
               <div className="flex justify-between items-center mt-2 px-1">
                 {activeTab === 'watchlist' ? (
-                  <div className="flex items-center gap-2 w-full justify-between">
+                  <div className="flex items-center gap-2 max-w-[50%]">
                     <select 
                       value={currentWatchlist} 
                       onChange={(e) => setCurrentWatchlist(e.target.value)}
-                      className={`text-sm p-1 rounded border ${borderCol} ${bgPanel} font-bold focus:outline-none max-w-[150px] truncate`}
+                      className={`text-sm p-1 rounded border ${borderCol} ${bgPanel} font-bold focus:outline-none max-w-[120px] truncate`}
                     >
                       {Object.keys(watchlists).map(w => <option key={w} value={w}>{w}</option>)}
                     </select>
@@ -746,26 +746,25 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <span className={`text-[11px] ${textMuted}`}>
-                      {screenerParams.minMarketCap > 0 || screenerParams.maxMarketCap > 0 
-                        ? `MCap Range: ${screenerParams.minMarketCap || 0} - ${screenerParams.maxMarketCap ? screenerParams.maxMarketCap + 'Cr' : '∞'}`
-                        : 'No MCap Range Limit'}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <ArrowUpDown className={`w-3.5 h-3.5 ${textMuted}`} />
-                      <select 
-                        value={sortOrder} 
-                        onChange={(e) => setSortOrder(e.target.value)}
-                        className={`text-xs p-1 rounded border ${borderCol} ${bgPanel} font-medium focus:outline-none`}
-                      >
-                        <option value="mcap_desc">MCap: High → Low</option>
-                        <option value="mcap_asc">MCap: Low → High</option>
-                        <option value="alpha_asc">Name: A → Z</option>
-                      </select>
-                    </div>
-                  </>
+                  <span className={`text-[11px] ${textMuted} truncate pr-2`}>
+                    {screenerParams.minMarketCap > 0 || screenerParams.maxMarketCap > 0 
+                      ? `MCap Range: ${screenerParams.minMarketCap || 0} - ${screenerParams.maxMarketCap ? screenerParams.maxMarketCap + 'Cr' : '∞'}`
+                      : 'No MCap Range Limit'}
+                  </span>
                 )}
+                
+                <div className="flex items-center gap-1 shrink-0">
+                  <ArrowUpDown className={`w-3.5 h-3.5 ${textMuted}`} />
+                  <select 
+                    value={sortOrder} 
+                    onChange={(e) => setSortOrder(e.target.value)}
+                    className={`text-xs p-1 rounded border ${borderCol} ${bgPanel} font-medium focus:outline-none`}
+                  >
+                    <option value="mcap_desc">MCap: High → Low</option>
+                    <option value="mcap_asc">MCap: Low → High</option>
+                    <option value="alpha_asc">Name: A → Z</option>
+                  </select>
+                </div>
               </div>
 
             </div>
@@ -839,7 +838,7 @@ export default function App() {
           </header>
 
           <main 
-            className="w-full flex-1 flex flex-col relative shrink-0 p-1"
+            className="w-full flex-1 flex flex-col relative shrink-0 p-1 min-h-0"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -854,9 +853,9 @@ export default function App() {
                 </div>
 
                 
-                <div id="chart-container" className="flex-1 w-full pt-1 pb-1 flex flex-col relative select-none">
+                <div id="chart-container" className="flex-1 w-full pt-1 pb-1 flex flex-col relative select-none min-h-0">
                   {/* Price Chart */}
-                  <div style={{ height: `${priceChartPct}%` }} className="w-full">
+                  <div style={{ flexGrow: priceChartPct, flexBasis: 0 }} className="w-full min-h-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart 
                         data={stockData.slice(zoomRange.start, zoomRange.end)} 
@@ -867,20 +866,20 @@ export default function App() {
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                         <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} hide padding={{ right: 35 }} />
                         <YAxis domain={['auto', 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} orientation="right" width={55} />
-                        <Tooltip cursor={{ stroke: textMuted, strokeWidth: 1, strokeDasharray: '3 3' }} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
+                        <Tooltip cursor={false} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} />
                         <Bar dataKey="candleRange" shape={chartType === 'candle' ? <Candlestick /> : <OHLCBar />} />
                         <Line type="monotone" dataKey="ma10" stroke="#f59e0b" dot={false} strokeWidth={1} name="SMA 10" />
                         <Line type="monotone" dataKey="ma50" stroke="#ec4899" dot={false} strokeWidth={1.5} name="SMA 50" />
                         <Line type="monotone" dataKey={timeframe === 'daily' ? "ma200" : "ma40"} stroke="#8b5cf6" dot={false} strokeWidth={2} name={timeframe === 'daily' ? "SMA 200" : "SMA 40"} />
-                        {crosshairVal && <ReferenceLine y={crosshairVal.close} stroke={textMuted} strokeDasharray="3 3" />}
-                        {crosshairVal && <ReferenceLine x={crosshairVal.date} stroke={textMuted} strokeDasharray="3 3" />}
+                        {crosshairVal && <ReferenceLine y={crosshairVal.close} stroke={isDark ? '#9ca3af' : '#4b5563'} strokeWidth={1} strokeDasharray="4 4" />}
+                        {crosshairVal && <ReferenceLine x={crosshairVal.date} stroke={isDark ? '#9ca3af' : '#4b5563'} strokeWidth={1} strokeDasharray="4 4" />}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
 
                   {/* Resizer */}
                   <div 
-                    className={`h-2 w-full cursor-row-resize flex items-center justify-center ${isResizing ? 'bg-blue-500' : 'bg-transparent hover:bg-gray-500/50'} z-50`}
+                    className={`h-2 shrink-0 w-full cursor-row-resize flex items-center justify-center ${isResizing ? 'bg-blue-500' : 'bg-transparent hover:bg-gray-500/50'} z-50`}
                     onMouseDown={handleResizeStart}
                     onTouchStart={handleResizeStart}
                   >
@@ -888,7 +887,7 @@ export default function App() {
                   </div>
 
                   {/* Volume Chart */}
-                  <div style={{ height: `${100 - priceChartPct}%` }} className={`w-full pt-1`}>
+                  <div style={{ flexGrow: 100 - priceChartPct, flexBasis: 0 }} className="w-full pt-1 min-h-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart 
                         data={stockData.slice(zoomRange.start, zoomRange.end)} 
@@ -899,7 +898,7 @@ export default function App() {
                         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
                         <XAxis dataKey="date" stroke={axisText} tick={{fontSize: 9}} minTickGap={20} padding={{ right: 35 }} />
                         <YAxis domain={[0, 'auto']} stroke={axisText} tick={{fontSize: 11, fill: tickColor, fontWeight: 'bold'}} tickFormatter={formatIndianNumber} orientation="right" width={55} />
-                        <Tooltip cursor={{ stroke: textMuted, strokeWidth: 1, strokeDasharray: '3 3' }} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
+                        <Tooltip cursor={false} contentStyle={{backgroundColor: tooltipBg, borderColor: tooltipBorder, color: tickColor, fontSize: '11px'}} itemStyle={{color: tickColor}} formatter={(val) => [formatIndianNumber(val), "Volume"]} />
                         <Bar dataKey="volume" isAnimationActive={false}>
                           {stockData.slice(zoomRange.start, zoomRange.end).map((entry, index) => (
                             <Cell key={`vol-cell-${index}`} fill={entry.close >= entry.open ? '#22c55e' : '#ef4444'} opacity={0.65} />
@@ -907,7 +906,7 @@ export default function App() {
                         </Bar>
                         <Line type="monotone" dataKey="vol_ma20" stroke="#f59e0b" dot={false} strokeWidth={1.2} name="Vol SMA 20" />
                         <Line type="monotone" dataKey="vol_ma50" stroke="#ec4899" dot={false} strokeWidth={1.2} name="Vol SMA 50" />
-                        {crosshairVal && <ReferenceLine x={crosshairVal.date} stroke={textMuted} strokeDasharray="3 3" />}
+                        {crosshairVal && <ReferenceLine x={crosshairVal.date} stroke={isDark ? '#9ca3af' : '#4b5563'} strokeWidth={1} strokeDasharray="4 4" />}
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
